@@ -1196,6 +1196,37 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+/* ---------- adjustable height of the Live-Verkehr map ---------- */
+(() => {
+  const DEF = 560, MIN = 320, MAX = 1400;
+  const root = document.documentElement;
+  const set = (h, save) => {
+    h = Math.round(clamp(h, MIN, MAX));
+    root.style.setProperty('--flow-h', h + 'px');
+    if (save) store.set('ff-flow-h', String(h));
+    if (S.snap) { F.sortedL = F.sortedR = 0; render(); }
+  };
+  const saved = parseInt(store.get('ff-flow-h', ''), 10);
+  if (saved) set(saved, false);
+  const grip = $('#flowGrip'), wrap = $('#flowWrap');
+  let startY = 0, startH = 0, moving = false;
+  grip.addEventListener('pointerdown', (e) => {
+    moving = true; startY = e.clientY; startH = wrap.getBoundingClientRect().height;
+    grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); document.body.classList.add('resizing');
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (moving) root.style.setProperty('--flow-h', Math.round(clamp(startH + e.clientY - startY, MIN, MAX)) + 'px');
+  });
+  const end = () => {
+    if (!moving) return;
+    moving = false; grip.classList.remove('drag'); document.body.classList.remove('resizing');
+    set(wrap.getBoundingClientRect().height, true);
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  grip.addEventListener('dblclick', () => { store.set('ff-flow-h', ''); set(DEF, false); });
+})();
+
 let rz;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { drawAllStatic(); if (S.snap) flowModel(S.snap); }, 120); });
 
