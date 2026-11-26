@@ -5,7 +5,15 @@
 FritzFlow nutzt den eingebauten Paketmitschnitt der FRITZ!Box und macht daraus ein
 Live-Dashboard: Geräte, Ziele (Domains/Dienste), Durchsatz und jede einzelne Verbindung.
 Eine einzige Programmdatei für Windows, macOS und Linux – ohne Installation, ohne
-Abhängigkeiten.
+Abhängigkeiten, ohne Cloud.
+
+![FritzFlow im Demo-Modus (simulierte Daten)](docs/screenshot.jpg)
+
+*Screenshot im Demo-Modus – alle Geräte, Ziele und Werte sind simuliert.*
+
+> **English:** FritzFlow turns the built-in packet capture of an AVM FRITZ!Box router into a live
+> dashboard showing which device talks to which service. Single binary for Windows, macOS and Linux,
+> no dependencies, no cloud – everything stays on your computer. The UI is in German.
 
 ## Funktionen
 
@@ -27,10 +35,20 @@ Abhängigkeiten.
 - Dark Mode (Standard) und Light Mode
 - **Demo-Modus** mit simulierter FRITZ!Box: `fritzflow -demo`
 
+## Voraussetzungen
+
+- Eine **FRITZ!Box als Router** (der Paketmitschnitt steht nur im Router-Betrieb zur Verfügung)
+- Ein FRITZ!Box-Benutzer mit dem Recht **„FRITZ!Box Einstellungen“** (siehe unten)
+- Ein Rechner im selben Heimnetz mit einem aktuellen Browser
+- Für CPU, Temperatur, Energie und Online-Monitor: **FRITZ!OS 8** oder neuer (ohne diese
+  Anzeigen läuft FritzFlow auch mit älteren Versionen)
+
+Getestet mit einer FRITZ!Box 7590 unter FRITZ!OS 8.5x. Andere Modelle sollten funktionieren,
+solange sie den Paketmitschnitt anbieten – Rückmeldungen sind willkommen.
+
 ## Schnellstart
 
-1. Unter **[Releases](https://github.com/sabieler/fritzFlow/releases/latest)** die passende Datei herunterladen
-   (das Repo ist privat – dafür musst du bei GitHub angemeldet und Mitglied des Repos sein):
+1. Unter **[Releases](https://github.com/sabieler/fritzFlow/releases/latest)** die passende Datei herunterladen:
 
    | System | Datei |
    |---|---|
@@ -133,12 +151,34 @@ Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <
 - **Gerätenamen fehlen:** FritzFlow liest sie aus der Heimnetz-Übersicht bzw. per TR-064
   (*Heimnetz → Netzwerk → Netzwerkeinstellungen → Zugriff für Anwendungen zulassen*).
 
+## Datenschutz
+
+- **Alles bleibt lokal.** FritzFlow spricht nur mit deiner FRITZ!Box und – für die optionale
+  Reverse-DNS-Auflösung – mit deinem normalen DNS-Server. Es gibt keine Cloud, kein Konto,
+  keine Telemetrie und keine Update-Abfrage.
+- **Keine Inhalte:** Ausgewertet werden nur Paket-Kopfdaten (Adressen, Ports, Größen) sowie
+  Hostnamen aus DNS-Antworten, TLS-SNI und HTTP-Host. Paketinhalte werden weder gelesen noch
+  gespeichert.
+- **Nichts wird gespeichert:** Verbindungen und Geräte existieren nur im Arbeitsspeicher und sind
+  nach dem Beenden weg. Auf der Festplatte liegt nur die Konfigurationsdatei.
+- **Nicht ausgelesen** werden die Zugangsdaten deines Internetanbieters, deine öffentliche IP-Adresse
+  und die Seriennummer der Box, auch wenn die FRITZ!Box sie über dieselben Schnittstellen liefert.
+
 ## Sicherheit
 
 - Die Oberfläche lauscht standardmäßig nur auf `127.0.0.1`. Andere Hostnamen werden abgewiesen
   (Schutz vor DNS-Rebinding), schreibende Anfragen von fremden Webseiten ebenfalls.
 - Wer `listen` auf `0.0.0.0` stellt, macht den Datenverkehr für alle im LAN sichtbar.
-- Der Mitschnitt zeigt, mit welchen Diensten Geräte kommunizieren. Informiere Mitbewohner/Gäste.
+- Das FRITZ!Box-Passwort steht im Klartext in der Konfigurationsdatei (nur für deinen Benutzer
+  lesbar). Wer das vermeiden will, nutzt `FRITZFLOW_PASSWORD` und einen eigenen, eingeschränkten
+  FRITZ!Box-Benutzer.
+
+## Rechtlicher Hinweis
+
+Nutze FritzFlow nur in deinem eigenen Netz. Der Mitschnitt zeigt, welches Gerät wann mit welchen
+Diensten kommuniziert – das sind personenbezogene Daten. **Informiere alle, die dein Netz
+mitbenutzen** (Familie, Mitbewohner, Gäste), und hole bei Bedarf ihr Einverständnis ein. Die
+Verantwortung für den Einsatz liegt bei dir.
 
 ## Wie es funktioniert
 
@@ -164,7 +204,7 @@ go test ./...                 # Unit- und Ende-zu-Ende-Tests (gegen simulierte B
 go test -fuzz=FuzzDecode ./internal/flow
 go run . -demo                # UI mit simulierten Daten
 ./scripts/build.sh            # alle Plattformen nach dist/ (lokal, nicht im Repo)
-git tag v0.2.0 && git push origin v0.2.0   # baut & veröffentlicht automatisch ein Release
+git tag vX.Y.Z && git push origin vX.Y.Z   # baut, testet und veröffentlicht automatisch ein Release
 ```
 
 Struktur:
@@ -179,3 +219,18 @@ Struktur:
 | `internal/fakebox` | simulierte FRITZ!Box für Demo und Tests |
 
 Keine externen Go-Module, keine CDN-Abhängigkeiten.
+
+## Danksagung
+
+Die Idee, den FRITZ!Box-Mitschnitt live abzugreifen, stammt von Skripten wie `fritzdump` aus dem
+[ntopng](https://github.com/ntop/ntopng)-Umfeld. FritzFlow ist eine eigenständige Neuentwicklung.
+
+## Marken
+
+FRITZ! und FRITZ!Box sind Marken der AVM GmbH bzw. FRITZ! GmbH. FritzFlow ist ein privates
+Open-Source-Projekt und steht in keiner Verbindung zu AVM; es wird von AVM weder unterstützt
+noch geprüft.
+
+## Lizenz
+
+[MIT](LICENSE) – frei nutzbar, veränderbar und weitergebbar, ohne Gewährleistung.

@@ -62,12 +62,12 @@ func TestFirmwareVersion(t *testing.T) {
 
 func TestNetLabel(t *testing.T) {
 	cases := []struct{ typ, port, classes, props, ip, iface, want string }{
-		{"wlan", "WLAN", "wlan", "2,4 GHz, 72 / 72 Mbit/s", "192.168.3.5", "802.11", "WLAN 2,4 GHz"},
-		{"wlan", "WLAN", "wlan", "5 GHz, 520 / 585 Mbit/s", "192.168.3.6", "802.11", "WLAN 5 GHz"},
-		{"ethernet", "LAN 1 mit 1 Gbit/s", "ethernet", "", "192.168.3.7", "Ethernet", "LAN"},
-		{"wlan", "WLAN", "wlan guest", "", "192.168.3.8", "802.11", "Gast"},
+		{"wlan", "WLAN", "wlan", "2,4 GHz, 72 / 72 Mbit/s", "192.168.178.5", "802.11", "WLAN 2,4 GHz"},
+		{"wlan", "WLAN", "wlan", "5 GHz, 520 / 585 Mbit/s", "192.168.178.6", "802.11", "WLAN 5 GHz"},
+		{"ethernet", "LAN 1 mit 1 Gbit/s", "ethernet", "", "192.168.178.7", "Ethernet", "LAN"},
+		{"wlan", "WLAN", "wlan guest", "", "192.168.178.8", "802.11", "Gast"},
 		{"", "", "", "", "192.168.179.20", "802.11", "Gast"},
-		{"", "", "", "", "192.168.3.9", "802.11", "WLAN"},
+		{"", "", "", "", "192.168.178.9", "802.11", "WLAN"},
 	}
 	for _, c := range cases {
 		if got := netLabel(c.typ, c.port, c.classes, c.props, c.ip, c.iface); got != c.want {
@@ -87,14 +87,14 @@ func TestSeries(t *testing.T) {
 }
 
 func TestHasAddr(t *testing.T) {
-	_, n4, _ := net.ParseCIDR("192.168.3.20/24")
-	n4.IP = net.ParseIP("192.168.3.20")
+	_, n4, _ := net.ParseCIDR("192.168.178.20/24")
+	n4.IP = net.ParseIP("192.168.178.20")
 	n6 := &net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}
 	addrs := []net.Addr{n4, n6}
 	for _, tc := range []struct {
 		a    string
 		want bool
-	}{{"192.168.3.20", true}, {"::ffff:192.168.3.20", true}, {"fe80::1%eth0", true}, {"192.168.3.21", false}} {
+	}{{"192.168.178.20", true}, {"::ffff:192.168.178.20", true}, {"fe80::1%eth0", true}, {"192.168.178.21", false}} {
 		if got := hasAddr(addrs, netip.MustParseAddr(tc.a).Unmap()); got != tc.want {
 			t.Errorf("hasAddr(%s) = %v, want %v", tc.a, got, tc.want)
 		}

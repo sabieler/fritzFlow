@@ -255,7 +255,7 @@ function withAlpha(color, a) {
 const tweens = [];
 function tweenNum(elm, target, fmt) {
   let t = tweens.find((x) => x.el === elm);
-  if (!t) { t = { el: elm, cur: target, target, fmt }; tweens.push(t); }
+  if (!t) { t = { el: elm, cur: target, target, fmt }; tweens.push(t); elm.textContent = fmt(target); }
   t.target = target; t.fmt = fmt;
 }
 function stepTweens(dt) {
