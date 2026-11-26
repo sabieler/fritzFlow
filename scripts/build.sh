@@ -2,6 +2,14 @@
 # Builds FritzFlow for Windows, macOS and Linux into ./dist
 set -eu
 cd "$(dirname "$0")/.."
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "Fehler: 'go' wurde nicht gefunden." >&2
+  echo "  Go installieren (>= 1.21): https://go.dev/dl/" >&2
+  echo "  Ist Go schon installiert, den bin-Ordner in den PATH aufnehmen, z. B.:" >&2
+  echo "    export PATH=\"\$HOME/go/bin:/usr/local/go/bin:\$PATH\"" >&2
+  exit 1
+fi
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 LDFLAGS="-s -w -X main.version=${VERSION}"
 rm -rf dist && mkdir -p dist
