@@ -19,11 +19,12 @@ function rateParts(Bps) {
   while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
   return [v < 10 && i > 0 ? nf1.format(v) : nf0.format(v), u[i]];
 }
-const fmtRate = (Bps) => rateParts(Bps).join(' ');
+// non-breaking space: a number never wraps away from its unit
+const fmtRate = (Bps) => rateParts(Bps).join(' ');
 function fmtBytes(B) {
   let v = Math.max(0, B); const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
   while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
-  return (v < 10 && i > 0 ? nf1.format(v) : nf0.format(v)) + ' ' + u[i];
+  return (v < 10 && i > 0 ? nf1.format(v) : nf0.format(v)) + ' ' + u[i];
 }
 function fmtDur(s) {
   s = Math.max(0, s | 0);
@@ -806,12 +807,12 @@ function renderKpis(s) {
     const parts = [];
     if (w && lineKbit) {
       const pct = Math.min(100, (cur / (lineKbit * 125)) * 100);
-      parts.push(`${Math.round(pct)} % von ${fmtRate(lineKbit * 125)}`);
+      parts.push(`${Math.round(pct)} % von ${fmtRate(lineKbit * 125)}`);
       $(bar).hidden = false; $(bar).firstElementChild.style.width = pct + '%';
     } else $(bar).hidden = true;
     parts.push('Spitze 60 s: ' + fmtRate(Math.max(0, ...last60.map((p) => val(p, k)))));
     const cov = w ? coverage(k) : null;
-    if (cov != null) parts.push(`Mitschnitt sieht ${cov} %`);
+    if (cov != null) parts.push(`Mitschnitt sieht ${cov} %`);
     else if (!w) parts.push('gesamt ' + fmtBytes(k === 'rx' ? t.rx : t.tx));
     $(el).textContent = parts.join(' · ');
     $(el).title = w ? 'Wert vom FRITZ!Box-Online-Monitor (echter Durchsatz am Anschluss). „Mitschnitt sieht“: Anteil, den der Paketmitschnitt erfasst – Verkehr, den die Box per Hardware beschleunigt, fehlt dort.' : 'Wert aus dem Paketmitschnitt';
