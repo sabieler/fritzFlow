@@ -29,6 +29,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release create "$GITHUB_REF_NAME" dist/fritzflow-* dist/SHA256SUMS \
             --title "fritzFlow $GITHUB_REF_NAME" \
-            --notes "Programmdatei für dein System herunterladen und starten – siehe README. Prüfsummen in SHA256SUMS."
+            --notes "Programmdatei für dein System herunterladen und starten – welche Datei passt, steht in der README (Abschnitt Schnellstart). Prüfsummen in SHA256SUMS."

@@ -8,7 +8,9 @@ rm -rf dist && mkdir -p dist
 
 build() {
   os="$1"; arch="$2"; ext="${3:-}"
-  out="dist/fritzflow-${VERSION}-${os}-${arch}${ext}"
+  # fixed names without version: the README links to
+  # https://github.com/<owner>/<repo>/releases/latest/download/<name>
+  out="dist/fritzflow-${os}-${arch}${ext}"
   echo "→ ${out}"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$LDFLAGS" -o "$out" .
 }
@@ -23,4 +25,5 @@ build linux   amd64
 build linux   arm64
 build linux   arm
 (cd dist && sha256sum fritzflow-* > SHA256SUMS 2>/dev/null || shasum -a 256 fritzflow-* > SHA256SUMS)
+echo "$VERSION" > dist/VERSION
 ls -lh dist

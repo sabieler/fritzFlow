@@ -55,27 +55,29 @@ solange sie den Paketmitschnitt anbieten – Rückmeldungen sind willkommen.
 
 ## Schnellstart
 
-1. Unter **[Releases](https://github.com/sabieler/fritzFlow/releases/latest)** die passende Datei herunterladen:
+1. Die passende Datei herunterladen – ein Klick lädt immer die **neueste Version**:
 
-   Der Dateiname enthält vorne die Version, **entscheidend ist das Ende**:
-
-   | Dein System | Datei endet auf |
+   | Dein System | Download |
    |---|---|
-   | **Windows** – fast alle PCs und Laptops (Intel/AMD) | **`windows-amd64.exe`** |
-   | Windows auf ARM (z. B. Snapdragon, Surface Pro X) | `windows-arm64.exe` |
-   | **macOS** mit Apple-Chip (M1, M2, M3, M4 …) | **`darwin-arm64`** |
-   | macOS mit Intel-Prozessor (ältere Macs) | `darwin-amd64` |
-   | **Linux** – normaler PC | **`linux-amd64`** |
-   | Raspberry Pi 3/4/5 mit 64-Bit-System | `linux-arm64` |
-   | Raspberry Pi mit 32-Bit-System | `linux-arm` |
+   | **Windows** – fast alle PCs und Laptops (Intel/AMD) | **[fritzflow-windows-amd64.exe](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-windows-amd64.exe)** |
+   | Windows auf ARM (z. B. Snapdragon, Surface Pro X) | [fritzflow-windows-arm64.exe](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-windows-arm64.exe) |
+   | **macOS** mit Apple-Chip (M1, M2, M3, M4 …) | **[fritzflow-darwin-arm64](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-darwin-arm64)** |
+   | macOS mit Intel-Prozessor (ältere Macs) | [fritzflow-darwin-amd64](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-darwin-amd64) |
+   | **Linux** – normaler PC | **[fritzflow-linux-amd64](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-linux-amd64)** |
+   | Raspberry Pi 3/4/5 mit 64-Bit-System | [fritzflow-linux-arm64](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-linux-arm64) |
+   | Raspberry Pi mit 32-Bit-System | [fritzflow-linux-arm](https://github.com/sabieler/fritzFlow/releases/latest/download/fritzflow-linux-arm) |
+
+   Alle Dateien, Prüfsummen (`SHA256SUMS`) und ältere Versionen: [Releases](https://github.com/sabieler/fritzFlow/releases).
+   Die Version zeigt das Programm in der Fußzeile der Oberfläche oder mit `-version`.
 
    Welcher Mac? Apple-Menü → *Über diesen Mac* → steht dort „Chip: Apple M…“, ist es `darwin-arm64`.
 
    Starten:
    - **Windows:** Datei doppelklicken. Bei „Der Computer wurde durch Windows geschützt“
      auf *Weitere Informationen → Trotzdem ausführen* klicken (die Datei ist nicht signiert).
-   - **macOS:** im Terminal `chmod +x fritzflow-…-darwin-arm64 && xattr -d com.apple.quarantine fritzflow-…-darwin-arm64 && ./fritzflow-…-darwin-arm64`
-   - **Linux:** `chmod +x fritzflow-…-linux-amd64 && ./fritzflow-…-linux-amd64`
+   - **macOS:** im Terminal im Download-Ordner:
+     `chmod +x fritzflow-darwin-arm64 && xattr -d com.apple.quarantine fritzflow-darwin-arm64 && ./fritzflow-darwin-arm64`
+   - **Linux:** `chmod +x fritzflow-linux-amd64 && ./fritzflow-linux-amd64`
 
    Oder selbst bauen (Go ≥ 1.21): `go build -o fritzflow .` bzw. `./scripts/build.sh` für alle Plattformen.
 2. Der Browser öffnet sich automatisch unter <http://localhost:8484>.
