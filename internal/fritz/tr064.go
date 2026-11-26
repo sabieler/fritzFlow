@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -24,7 +25,27 @@ type Host struct {
 	Name   string
 	Iface  string
 	Active bool
-	Router bool // the FRITZ!Box itself
+	Router bool   // the FRITZ!Box itself
+	Net    string // "LAN", "WLAN 2,4 GHz", "WLAN 5 GHz", "WLAN", "Gast" or ""
+}
+
+var bandRe = regexp.MustCompile(`(2,4|2\.4|5|6) GHz`)
+
+// netLabel derives the network segment of a device.
+func netLabel(typ, port, classes, props, ip, iface string) string {
+	all := strings.ToLower(typ + " " + port + " " + classes + " " + props)
+	switch {
+	case strings.Contains(all, "guest") || strings.Contains(all, "gast") || strings.HasPrefix(ip, "192.168.179."):
+		return "Gast"
+	case strings.Contains(all, "wlan") || iface == "802.11":
+		if m := bandRe.FindStringSubmatch(props); m != nil {
+			return "WLAN " + strings.Replace(m[1], ".", ",", 1) + " GHz"
+		}
+		return "WLAN"
+	case strings.Contains(all, "ethernet") || strings.Contains(all, "lan") || strings.EqualFold(iface, "Ethernet"):
+		return "LAN"
+	}
+	return ""
 }
 
 const hostsService = "urn:dslforum-org:service:Hosts:1"
@@ -261,7 +282,8 @@ func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 			continue
 		}
 		hs = append(hs, Host{IP: v["NewIPAddress"], MAC: v["NewMACAddress"], Name: v["NewHostName"],
-			Iface: v["NewInterfaceType"], Active: v["NewActive"] == "1"})
+			Iface: v["NewInterfaceType"], Active: v["NewActive"] == "1",
+			Net: netLabel("", "", "", "", v["NewIPAddress"], v["NewInterfaceType"])})
 	}
 	return hs, nil
 }
@@ -290,16 +312,21 @@ func (c *Client) fetchHostList(ctx context.Context, path string) ([]Host, error)
 	}
 	hs := make([]Host, 0, len(hl.Items))
 	for _, it := range hl.Items {
-		hs = append(hs, Host{IP: it.IP, MAC: it.MAC, Name: it.Name, Iface: it.Iface, Active: it.Active == "1"})
+		hs = append(hs, Host{IP: it.IP, MAC: it.MAC, Name: it.Name, Iface: it.Iface, Active: it.Active == "1",
+			Net: netLabel("", "", "", "", it.IP, it.Iface)})
 	}
 	return hs, nil
 }
 
 type netDevEntry struct {
-	Name string `json:"name"`
-	MAC  string `json:"mac"`
-	Type string `json:"type"`
-	Port string `json:"port"`
+	Name       string          `json:"name"`
+	MAC        string          `json:"mac"`
+	Type       string          `json:"type"`
+	Port       string          `json:"port"`
+	Classes    json.RawMessage `json:"classes"`
+	Properties []struct {
+		Txt string `json:"txt"`
+	} `json:"properties"`
 	IPv4 struct {
 		IP string `json:"ip"`
 	} `json:"ipv4"`
@@ -345,7 +372,15 @@ func (c *Client) NetDevices(ctx context.Context, sid string) ([]Host, error) {
 			if strings.EqualFold(e.Type, "wlan") || strings.Contains(strings.ToUpper(e.Port), "WLAN") {
 				iface = "802.11"
 			}
-			hs = append(hs, Host{IP: e.IPv4.IP, MAC: e.MAC, Name: e.Name, Iface: iface, Active: active, Router: router})
+			var props []string
+			for _, p := range e.Properties {
+				props = append(props, p.Txt)
+			}
+			net := ""
+			if !router && active {
+				net = netLabel(e.Type, e.Port, string(e.Classes), strings.Join(props, " "), e.IPv4.IP, iface)
+			}
+			hs = append(hs, Host{IP: e.IPv4.IP, MAC: e.MAC, Name: e.Name, Iface: iface, Active: active, Router: router, Net: net})
 		}
 	}
 	add(out.Data.Active, true, false)

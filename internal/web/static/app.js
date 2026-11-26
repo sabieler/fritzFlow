@@ -110,7 +110,7 @@ function hashColor(s) {
 }
 const destCache = new Map();
 function destInfo(c) {
-  if (c.kind === 'router') return { key: 'FRITZ!Box', label: 'FRITZ!Box', color: '#e2001a' };
+  if (c.kind === 'router') { const n = boxLabel(); return { key: 'router', label: n, color: '#e2001a' }; }
   if (c.kind === 'lan') { const n = c.host || c.rip; return { key: 'lan:' + n, label: n, color: '#64748b' }; }
   const host = c.host || '';
   const ck = host || c.rip;
@@ -133,6 +133,10 @@ function destInfo(c) {
 }
 const SVC_COLORS = { HTTPS: '#3b82f6', QUIC: '#22d3ee', HTTP: '#f59e0b', DNS: '#a78bfa', NTP: '#94a3b8', UDP: '#34d399', TCP: '#64748b', 'Apple Push': '#cbd5e1', SSH: '#f472b6', STUN: '#fb7185', ICMP: '#facc15' };
 const svcColor = (s) => SVC_COLORS[s] || hashColor(s);
+
+/* ---------- box identity ---------- */
+const boxLabel = () => S.snap?.status?.boxName || 'FRITZ!Box';
+const boxModel = () => [S.snap?.status?.boxModel, S.snap?.status?.boxOS ? 'FRITZ!OS ' + S.snap.status.boxOS : ''].filter(Boolean).join(' · ');
 
 /* ---------- theme ---------- */
 let css = {};
@@ -158,12 +162,30 @@ const S = {
   snap: null,
   devs: new Map(),
   hist: [], // {t, rx, tx}
-  filter: { q: '', dev: store.get('ff-dev', '') || '', onlyWan: store.get('ff-wan', '1') === '1' },
+  filter: {
+    q: '',
+    dev: store.get('ff-dev', '') || '',
+    kind: store.get('ff-kind', store.get('ff-wan', '1') === '0' ? 'all' : 'wan'), // wan | int | all
+    net: store.get('ff-net', ''), // '' = all networks, else e.g. 'LAN', 'WLAN 5 GHz', 'Gast'
+  },
   sort: { k: 'rate', asc: false },
   setupShown: false,
+  // per-view ordering: 'live' = by current activity, 'static' = calm/fixed order
+  order: { flow: store.get('ff-sort-flow', 'static'), dest: store.get('ff-sort-dest', 'live'), dev: store.get('ff-sort-dev', 'live') },
   cfg: null,
 };
-$('#onlyWan').checked = S.filter.onlyWan;
+
+/* ---------- per-view ordering ---------- */
+function syncSegs() {
+  document.querySelectorAll('.mini-seg').forEach((g) => g.querySelectorAll('button').forEach((b) =>
+    b.classList.toggle('on', b.dataset.v === S.order[g.dataset.view])));
+}
+document.querySelectorAll('.mini-seg').forEach((g) => g.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.order[g.dataset.view] = b.dataset.v; store.set('ff-sort-' + g.dataset.view, b.dataset.v);
+  F.sortedL = F.sortedR = 0; syncSegs(); render();
+}));
+syncSegs();
 
 /* ---------- canvas helper ---------- */
 function fitCanvas(cv) {
@@ -380,7 +402,9 @@ function flowModel(snap) {
     const cap = cands.length > maxN ? maxN - 1 : maxN;
     const prev = [...F.nodes.values()].filter((n) => n.side === side && !n.gone && !n.more)
       .sort((a, b) => a.slot - b.slot).map((n) => n.id);
-    const shown = prev.filter((id) => rank.has(id) && rank.get(id) < cap + 3).slice(0, cap);
+    const resort = S.order.flow === 'live' && Date.now() - (F['sorted' + side] || 0) > 3000;
+    if (resort) F['sorted' + side] = Date.now();
+    const shown = resort ? [] : prev.filter((id) => rank.has(id) && rank.get(id) < cap + 3).slice(0, cap);
     const set = new Set(shown);
     for (const c of cands) { if (shown.length >= cap) break; if (!set.has(c.nid)) { shown.push(c.nid); set.add(c.nid); } }
     const byId = new Map(cands.map((c) => [c.nid, c]));
@@ -425,7 +449,7 @@ function flowModel(snap) {
 }
 function emptyText() {
   const st = S.snap?.status?.state;
-  if (st === 'live') return S.filter.dev || S.filter.q ? 'Keine Verbindungen für diesen Filter' : 'Gerade ist es ruhig im Netz …';
+  if (st === 'live') return S.filter.dev || S.filter.q || S.filter.net || S.filter.kind !== 'all' ? 'Keine Verbindungen für diesen Filter' : 'Gerade ist es ruhig im Netz …';
   if (st === 'error') return 'Keine Verbindung zur FRITZ!Box';
   if (st === 'setup') return 'Bitte zuerst die FRITZ!Box einrichten';
   return 'Warte auf Daten von der FRITZ!Box …';
@@ -580,7 +604,7 @@ function drawFlow(now) {
   ctx.strokeStyle = document.documentElement.dataset.theme === 'dark' ? '#cfe6ff' : '#3b4a66'; ctx.lineWidth = 1.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.stroke(path2d('router')); ctx.restore();
   ctx.textAlign = 'center'; ctx.fillStyle = css.text; ctx.font = '700 12px system-ui, sans-serif';
-  ctx.fillText('FRITZ!Box', box.x, box.y + s * 0.28);
+  ctx.fillText(ellipsize(ctx, boxLabel(), s - 8), box.x, box.y + s * 0.28);
   ctx.font = '600 11px system-ui, sans-serif'; ctx.fillStyle = css.down;
   ctx.fillText(fmtRate(F.box.rate), box.x, box.y + s / 2 + 18);
   ctx.restore();
@@ -611,8 +635,9 @@ $('#flow').addEventListener('mousemove', (ev) => {
   if (!nd) { tip.hidden = true; return; }
   let title, rx, tx, extra = '';
   if (nd.id === 'box') {
-    title = 'FRITZ!Box'; rx = S.snap?.totals.rxRate || 0; tx = S.snap?.totals.txRate || 0;
-    extra = `<div class="tr"><span>Verbindungen</span><span>${S.snap?.totals.conns || 0}</span></div>`;
+    title = esc(boxLabel()); rx = S.snap?.totals.rxRate || 0; tx = S.snap?.totals.txRate || 0;
+    extra = (boxModel() ? `<div class="tr"><span>${esc(boxModel())}</span></div>` : '') +
+      `<div class="tr"><span>Verbindungen</span><span>${S.snap?.totals.conns || 0}</span></div>`;
   } else {
     title = esc(nd.label); rx = nd.rx; tx = nd.tx;
     if (nd.devId) {
@@ -643,15 +668,50 @@ function matchesQuery(c) {
   const di = destInfo(c);
   return (devName(c.dev) + ' ' + c.host + ' ' + c.rip + ' ' + c.lip + ' ' + c.svc + ' ' + c.proto + ' ' + di.label + ' ' + c.rport).toLowerCase().includes(q);
 }
-function visibleConns(conns, forFlow) {
-  return conns.filter((c) => (!S.filter.onlyWan || c.kind === 'wan') && (!S.filter.dev || c.dev === S.filter.dev) && (!forFlow || !c.closed) && matchesQuery(c));
+function kindOK(c) {
+  const k = S.filter.kind;
+  return k === 'all' || (k === 'wan' ? c.kind === 'wan' : c.kind !== 'wan');
 }
+function netOK(devId) {
+  return !S.filter.net || (S.devs.get(devId)?.net || '') === S.filter.net;
+}
+function visibleConns(conns, forFlow) {
+  return conns.filter((c) => kindOK(c) && netOK(c.dev) && (!S.filter.dev || c.dev === S.filter.dev) && (!forFlow || !c.closed) && matchesQuery(c));
+}
+const NET_ORDER = ['LAN', 'WLAN 2,4 GHz', 'WLAN 5 GHz', 'WLAN 6 GHz', 'WLAN', 'Gast'];
+let netKey = '';
+function renderFilterBar(s) {
+  const counts = new Map();
+  for (const d of s.devices) if (d.net && d.online) counts.set(d.net, (counts.get(d.net) || 0) + 1);
+  if (S.filter.net && !counts.has(S.filter.net)) counts.set(S.filter.net, 0);
+  const nets = [...counts.keys()].sort((a, b) => (NET_ORDER.indexOf(a) + 99) % 99 - (NET_ORDER.indexOf(b) + 99) % 99 || a.localeCompare(b));
+  const key = nets.map((n) => n + counts.get(n)).join('|') + '#' + S.filter.net;
+  if (key !== netKey) {
+    netKey = key;
+    $('#netPills').innerHTML = `<button type="button" data-v="">Alle</button>` +
+      nets.map((n) => `<button type="button" data-v="${esc(n)}">${esc(n)}<small>${counts.get(n)}</small></button>`).join('');
+  }
+  $('#netPills').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.filter.net));
+  $('#kindPills').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.filter.kind));
+  const parts = [];
+  if (S.filter.kind !== 'all') parts.push(S.filter.kind === 'wan' ? 'nur Internet' : 'nur intern');
+  if (S.filter.net) parts.push('nur ' + S.filter.net);
+  if (S.filter.dev) parts.push('nur ' + devName(S.filter.dev));
+  $('#filterInfo').textContent = parts.length ? 'Gefiltert: ' + parts.join(', ') : '';
+}
+$('#kindPills').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.filter.kind = b.dataset.v; store.set('ff-kind', b.dataset.v); render();
+});
+$('#netPills').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.filter.net = b.dataset.v; store.set('ff-net', b.dataset.v); render();
+});
 function setDevFilter(id) {
   S.filter.dev = id; store.set('ff-dev', id);
   render();
 }
 $('#search').addEventListener('input', (e) => { S.filter.q = e.target.value.trim().toLowerCase(); render(); });
-$('#onlyWan').addEventListener('change', (e) => { S.filter.onlyWan = e.target.checked; store.set('ff-wan', e.target.checked ? '1' : '0'); render(); });
 $('#devChip').addEventListener('click', () => setDevFilter(''));
 
 /* ---------- rendering ---------- */
@@ -683,7 +743,8 @@ function renderTopDest(conns) {
     if (!d) { d = { ...di, rate: 0, bytes: 0, n: 0 }; agg.set(di.key, d); }
     d.rate += c.rxRate + c.txRate; d.bytes += c.rx + c.tx; d.n++;
   }
-  const list = [...agg.values()].sort((a, b) => b.rate - a.rate || b.bytes - a.bytes).slice(0, 7);
+  const byVolume = S.order.dest === 'static';
+  const list = [...agg.values()].sort((a, b) => byVolume ? b.bytes - a.bytes || a.label.localeCompare(b.label) : b.rate - a.rate || b.bytes - a.bytes).slice(0, 7);
   const max = Math.max(1, ...list.map((d) => d.rate));
   const ol = $('#topDest');
   ol.innerHTML = list.length ? list.map((d) => `
@@ -703,7 +764,11 @@ $('#topDest').addEventListener('click', (e) => {
 const devEls = new Map();
 function renderDevices(s) {
   const ul = $('#devices');
-  const list = s.devices;
+  const list = s.devices.filter((d) => netOK(d.id));
+  if (S.order.dev === 'static') {
+    const nm = (d) => (d.name || d.ip || d.id).toLowerCase();
+    list.sort((a, b) => nm(a).localeCompare(nm(b), 'de'));
+  }
   const max = Math.max(1, ...list.map((d) => d.rxRate + d.txRate));
   const seen = new Set();
   list.forEach((d, i) => {
@@ -721,7 +786,7 @@ function renderDevices(s) {
     if (icon.dataset.ic !== ic) { icon.innerHTML = svgIcon(ic); icon.dataset.ic = ic; }
     icon.classList.toggle('on', !!d.online);
     li.querySelector('b').textContent = name;
-    const iface = /802\.11|wlan/i.test(d.iface) ? 'WLAN' : d.iface ? (/ether|lan/i.test(d.iface) ? 'LAN' : d.iface) : '';
+    const iface = d.net || (/802\.11|wlan/i.test(d.iface) ? 'WLAN' : d.iface ? (/ether|lan/i.test(d.iface) ? 'LAN' : d.iface) : '');
     li.querySelector('small').innerHTML = (iface ? `<span class="tag">${esc(iface)}</span>` : '') + esc(d.ip || d.mac || '') + (d.conns ? ` · ${d.conns} Verb.` : '');
     li.querySelector('.bar i').style.width = ((d.rxRate + d.txRate) / max) * 100 + '%';
     li.querySelector('.rates .d').textContent = d.rxRate > 0 ? '↓ ' + fmtRate(d.rxRate) : '';
@@ -731,7 +796,7 @@ function renderDevices(s) {
     if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] || null);
   });
   for (const [id, li] of devEls) if (!seen.has(id)) { li.remove(); devEls.delete(id); }
-  $('#devCount').textContent = `${s.totals.active} aktiv · ${list.length} bekannt`;
+  $('#devCount').textContent = S.filter.net ? `${list.length} in ${S.filter.net}` : `${s.totals.active} aktiv · ${list.length} bekannt`;
 }
 
 const rowEls = new Map();
@@ -823,8 +888,10 @@ function renderStatus(st) {
     box.innerHTML = banners.map(([c, m]) => `<div class="banner ${c}">${esc(m)}${c === 'err' ? '<button class="btn" data-open-setup>Einstellungen</button>' : ''}</div>`).join('');
   }
   if (st.state === 'setup' && !S.setupShown) { S.setupShown = true; openSetup(); }
+  const title = st.boxName ? 'FritzFlow · ' + st.boxName : 'FritzFlow';
+  if (document.title !== title) document.title = title;
   $('#footer').innerHTML = [
-    `<span>FRITZ!Box <b>${esc(st.box)}</b></span>`,
+    `<span>${esc(st.boxName || 'FRITZ!Box')} <b>${esc([st.boxModel, st.boxOS && 'FRITZ!OS ' + st.boxOS].filter(Boolean).join(' · ') || st.box)}</b></span>`,
     `<span>Schnittstelle <b>${esc(st.iface)}</b></span>`,
     `<span>Detailgrad <b>${st.snaplen} B</b></span>`,
     `<span>Mitschnitt-Last <b>${fmtRate(st.streamRate)}</b></span>`,
@@ -842,6 +909,7 @@ function render() {
   const chip = $('#devChip');
   chip.hidden = !S.filter.dev;
   if (S.filter.dev) chip.textContent = devName(S.filter.dev);
+  renderFilterBar(s);
   flowModel(s);
   renderTopDest(conns.filter((c) => !c.closed));
   drawDonut(conns);
@@ -869,22 +937,48 @@ function onSnapshot(s) {
   drawAllStatic();
 }
 
-/* ---------- event stream ---------- */
-let es, lastMsg = 0;
-function connect() {
-  try { es?.close(); } catch { /* ignore */ }
-  es = new EventSource('api/events');
-  es.onmessage = (ev) => {
-    lastMsg = Date.now();
-    try { onSnapshot(JSON.parse(ev.data)); } catch (e) { console.error(e); }
-  };
-  es.onerror = () => {
-    $('#status').dataset.state = 'error';
-    $('#statusText').textContent = 'FritzFlow nicht erreichbar';
-  };
+/* ---------- data connection ---------- */
+// Primary: Server-Sent Events. Fallback: polling (some ad/tracker blockers
+// or proxies break event streams). If nothing arrives at all, show a hint.
+const conn = { es: null, last: 0, mode: 'sse', pollTimer: null, started: Date.now(), hint: false };
+function handleData(text) {
+  conn.last = Date.now();
+  if (conn.hint) { conn.hint = false; $('#blockHint').hidden = true; }
+  try { onSnapshot(JSON.parse(text)); } catch (e) { console.error(e); }
 }
-connect();
-setInterval(() => { if (lastMsg && Date.now() - lastMsg > 10000) { lastMsg = Date.now(); connect(); } }, 3000);
+function startSSE() {
+  try { conn.es?.close(); } catch { /* ignore */ }
+  try {
+    conn.es = new EventSource('live');
+    conn.es.onmessage = (ev) => { if (conn.mode === 'sse') handleData(ev.data); };
+    conn.es.onerror = () => { /* EventSource reconnects by itself; watchdog decides */ };
+  } catch { startPolling(); }
+}
+function startPolling() {
+  if (conn.mode === 'poll') return;
+  conn.mode = 'poll';
+  try { conn.es?.close(); } catch { /* ignore */ }
+  console.info('FritzFlow: Live-Stream blockiert oder gestört – wechsle auf Abfrage.');
+  const tick = async () => {
+    try {
+      const r = await fetch('state', { cache: 'no-store' });
+      if (r.status === 200) handleData(await r.text());
+    } catch { /* app not reachable */ }
+    conn.pollTimer = setTimeout(tick, 1000);
+  };
+  tick();
+}
+startSSE();
+setInterval(() => {
+  const silent = Date.now() - (conn.last || conn.started);
+  if (conn.mode === 'sse' && silent > 5000) startPolling();
+  if (silent > 9000 && !conn.hint) {
+    conn.hint = true;
+    $('#blockHint').hidden = false;
+    $('#status').dataset.state = 'error';
+    $('#statusText').textContent = 'Keine Daten';
+  }
+}, 1000);
 
 /* ---------- animation loop ---------- */
 let prevT = performance.now();
@@ -930,10 +1024,37 @@ async function openSetup() {
   form.querySelectorAll('input,select').forEach((x) => { x.disabled = !!c.readOnly; });
   $('#testBtn').disabled = $('#saveBtn').disabled = !!c.readOnly;
   $('#cancelBtn').hidden = !c.passwordSet && !c.readOnly;
+  form.openBrowser.checked = c.openBrowser !== false;
+  await fillBrowsers(c.browser || '');
   $('#cfgPath').textContent = c.path ? 'Gespeichert in: ' + c.path + (c.passwordEnv ? ' (Passwort aus FRITZFLOW_PASSWORD)' : '') : '';
   if (!dlg.open) dlg.showModal();
   (c.passwordSet ? form.fritzbox : form.password).focus();
 }
+let browserList = null;
+async function fillBrowsers(current) {
+  if (!browserList) {
+    try { browserList = await (await fetch('api/browsers', { cache: 'no-store' })).json(); }
+    catch { browserList = { os: '', browsers: [] }; }
+  }
+  const sel = form.browserSel;
+  sel.innerHTML = '<option value="">Systemstandard</option>' +
+    browserList.browsers.map((b) => `<option value="${esc(b.cmd)}">${esc(b.name)}</option>`).join('') +
+    '<option value="custom">Anderer …</option>';
+  const known = current === '' || browserList.browsers.some((b) => b.cmd === current);
+  sel.value = known ? current : 'custom';
+  form.browserCustom.value = known ? '' : current;
+  form.browserCustom.placeholder = { windows: 'C:\\Pfad\\zu\\browser.exe', darwin: 'z. B. Firefox oder /Applications/Arc.app' }[browserList.os] || 'z. B. firefox oder /usr/bin/vivaldi';
+  $('#browserCustomWrap').hidden = sel.value !== 'custom';
+}
+form.browserSel.addEventListener('change', () => { $('#browserCustomWrap').hidden = form.browserSel.value !== 'custom'; });
+$('#browserTestBtn').addEventListener('click', async () => {
+  const b = formData().browser;
+  setMsg('busy', 'Starte Browser …');
+  try {
+    const j = await post('api/browser-test', { browser: b });
+    setMsg(j.ok ? 'ok' : 'err', j.ok ? 'Browser gestartet – dort sollte FritzFlow jetzt aufgehen.' : j.message);
+  } catch (e) { setMsg('err', e.message); }
+});
 form.ifaceSel.addEventListener('change', () => { $('#ifaceCustomWrap').hidden = form.ifaceSel.value !== 'custom'; });
 function formData() {
   const iface = form.ifaceSel.value === 'custom' ? form.ifaceCustom.value.trim() : form.ifaceSel.value;
@@ -945,6 +1066,8 @@ function formData() {
     snaplen: +(form.querySelector('input[name=snaplen]:checked')?.value || 200),
     captureMode: form.querySelector('input[name=captureMode]:checked')?.value || 'on-demand',
     reverseDns: form.reverseDns.checked,
+    openBrowser: form.openBrowser.checked,
+    browser: form.browserSel.value === 'custom' ? form.browserCustom.value.trim() : form.browserSel.value,
   };
 }
 async function post(url, body) {

@@ -55,6 +55,9 @@ type Status struct {
 	ReadOnly   bool    `json:"readOnly"`
 	Version    string  `json:"version"`
 	Viewers    int32   `json:"viewers"`
+	BoxName    string  `json:"boxName"`
+	BoxModel   string  `json:"boxModel"`
+	BoxOS      string  `json:"boxOS"`
 }
 
 type message struct {
@@ -89,6 +92,7 @@ type Engine struct {
 	restart    chan struct{}
 	received   atomic.Uint64
 	sid        atomic.Value // current session ID (string) while capturing
+	lostAt     atomic.Int64 // when the box last ended our capture (unix nano)
 
 	pubMu  sync.Mutex
 	latest []byte
@@ -140,7 +144,6 @@ func (e *Engine) Merge(in config.Config) config.Config {
 	cur := e.Config()
 	in = in.WithPasswordFrom(cur)
 	in.Listen = cur.Listen
-	in.OpenBrowser = cur.OpenBrowser
 	in.InsecureTLS = cur.InsecureTLS
 	in.TR064URL = cur.TR064URL
 	in.Normalize()
@@ -267,6 +270,13 @@ func (e *Engine) AddViewer() func() {
 	}
 }
 
+// Touch registers activity of a polling client (keeps on-demand capture alive
+// for the grace period).
+func (e *Engine) Touch() {
+	e.lastViewer.Store(time.Now().UnixNano())
+	signal(e.wake)
+}
+
 func (e *Engine) wanted(cfg config.Config) bool {
 	if cfg.CaptureMode == config.ModeAlways || e.viewers.Load() > 0 {
 		return true
@@ -353,7 +363,7 @@ func (e *Engine) tickLoop(ctx context.Context) {
 				streamRate = float64(recv-prevRecv) / dt
 			}
 			prevRecv, prevT = recv, now
-			if e.viewers.Load() == 0 {
+			if e.viewers.Load() == 0 && time.Since(time.Unix(0, e.lastViewer.Load())) > viewerGrace {
 				continue // nobody listens: skip JSON encoding
 			}
 			e.mu.Lock()
@@ -475,6 +485,7 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 	}
 	e.sid.Store(sid)
 	go e.learnBoxAddresses(ctx, cfg)
+	go e.learnBoxInfo(ctx, cl)
 	defer func() {
 		e.sid.Store("")
 		c2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
@@ -485,14 +496,34 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 	e.setStatus(StateConnecting, "Starte Mitschnitt auf "+cfg.Interface+" …")
 	tr := e.trk()
 	var live atomic.Bool
-	err = cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, func(p pcap.Packet) {
+	handle := func(p pcap.Packet) {
 		if !live.Load() {
 			live.Store(true)
 			e.setStatus(StateLive, "")
 			signal(e.hostsKick)
 		}
 		tr.Handle(p)
-	})
+	}
+	err = cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, handle)
+	if errors.Is(err, fritz.ErrStreamEnded) {
+		e.lostAt.Store(time.Now().UnixNano())
+	}
+	if errors.Is(err, fritz.ErrBusy) && time.Since(time.Unix(0, e.lostAt.Load())) < 3*time.Minute {
+		// Our own capture was ended recently, so somebody else (another
+		// FritzFlow, the FRITZ!Box UI) is capturing now: don't fight over it.
+		return fmt.Errorf("auf %s läuft bereits ein anderer Mitschnitt (zweite FritzFlow-Instanz oder FRITZ!Box-Oberfläche?)", cfg.Interface)
+	}
+	if errors.Is(err, fritz.ErrBusy) && ctx.Err() == nil {
+		// A capture left over from an earlier run blocks the interface:
+		// stop it and try once more right away.
+		e.log.Printf("Hängender Mitschnitt auf %s – beende ihn und starte neu", cfg.Interface)
+		sctx, scancel := context.WithTimeout(ctx, 8*time.Second)
+		cl.StopCapture(sctx, sid, cfg.Interface)
+		scancel()
+		if sleep(ctx, time.Second) {
+			err = cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, handle)
+		}
+	}
 	if ctx.Err() != nil && parent.Err() == nil {
 		return nil // stopped on purpose (restart / no viewers)
 	}
@@ -513,6 +544,29 @@ func (e *Engine) learnBoxAddresses(ctx context.Context, cfg config.Config) {
 		return
 	}
 	e.trk().AddRouterIPs(addrs)
+}
+
+// learnBoxInfo reads model and firmware version of the box.
+func (e *Engine) learnBoxInfo(ctx context.Context, cl *fritz.Client) {
+	ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	info, err := cl.Info(ictx)
+	if err != nil {
+		return
+	}
+	e.mu.Lock()
+	changed := e.status.BoxModel != info.Model || e.status.BoxOS != info.Firmware
+	e.status.BoxModel, e.status.BoxOS = info.Model, info.Firmware
+	e.mu.Unlock()
+	if changed && info.Model != "" {
+		e.log.Printf("%s, FRITZ!OS %s", info.Model, info.Firmware)
+	}
+}
+
+func (e *Engine) setBoxName(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.status.BoxName = name
 }
 
 func (e *Engine) hostsLoop(ctx context.Context) {
@@ -541,15 +595,18 @@ func (e *Engine) hostsLoop(ctx context.Context) {
 			continue
 		}
 		hctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		hs, err := cl.Hosts(hctx) // official TR-064 API
-		if err != nil {
-			// TR-064 disabled? Fall back to the web UI device list.
-			if sid, _ := e.sid.Load().(string); sid != "" {
-				if hs2, err2 := cl.NetDevices(hctx, sid); err2 == nil {
-					hs, err = hs2, nil
-				} else {
-					err = fmt.Errorf("%v; %v", err, err2)
-				}
+		var hs []fritz.Host
+		err = errors.New("keine Sitzung")
+		// Heimnetz list from the web UI: includes the box itself (its name)
+		// and works even when TR-064 is disabled.
+		if sid, _ := e.sid.Load().(string); sid != "" {
+			hs, err = cl.NetDevices(hctx, sid)
+		}
+		if err != nil { // fall back to the official TR-064 API
+			if hs2, err2 := cl.Hosts(hctx); err2 == nil {
+				hs, err = hs2, nil
+			} else {
+				err = fmt.Errorf("%v; %v", err, err2)
 			}
 		}
 		cancel()
@@ -561,7 +618,10 @@ func (e *Engine) hostsLoop(ctx context.Context) {
 		e.setHostsInfo("")
 		fh := make([]flow.Host, 0, len(hs))
 		for _, h := range hs {
-			fh = append(fh, flow.Host{MAC: h.MAC, IP: h.IP, Name: h.Name, Iface: h.Iface, Active: h.Active, Router: h.Router})
+			if h.Router && h.Name != "" {
+				e.setBoxName(h.Name)
+			}
+			fh = append(fh, flow.Host{MAC: h.MAC, IP: h.IP, Name: h.Name, Iface: h.Iface, Active: h.Active, Router: h.Router, Net: h.Net})
 		}
 		e.trk().SetHosts(fh)
 	}

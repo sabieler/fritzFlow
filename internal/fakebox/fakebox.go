@@ -8,6 +8,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net"
@@ -66,6 +67,11 @@ func Start(user, password string) (*Box, error) {
 	mux.HandleFunc("/cgi-bin/capture_notimeout", b.capture)
 	mux.HandleFunc("/upnp/control/hosts", b.hosts)
 	mux.HandleFunc("/devicehostlist.lua", b.hostList)
+	mux.HandleFunc("/data.lua", b.dataLua)
+	mux.HandleFunc("/jason_boxinfo.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml")
+		fmt.Fprint(w, `<j:BoxInfo xmlns:j="http://jason.avm.de/updatecheck/"><j:Name>FRITZ!Box Demo</j:Name><j:Version>164.08.00</j:Version><j:Serial>DEMO</j:Serial><j:Lab></j:Lab></j:BoxInfo>`)
+	})
 	b.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = b.srv.Serve(ln) }()
 	return b, nil
@@ -216,6 +222,42 @@ func (b *Box) hostList(w http.ResponseWriter, r *http.Request) {
 	write(99, "192.168.178.77", "3c:22:fb:00:00:77", "Gaeste-Laptop", "802.11", 0)
 	sb.WriteString(`</List>`)
 	fmt.Fprint(w, sb.String())
+}
+
+// dataLua serves page=netDev like the FRITZ!OS web UI.
+func (b *Box) dataLua(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	if !b.validSID(r.Form.Get("sid")) || r.Form.Get("page") != "netDev" {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	type ip struct {
+		IP string `json:"ip"`
+	}
+	type dev struct {
+		Name string `json:"name"`
+		MAC  string `json:"mac"`
+		Type string `json:"type"`
+		IPv4 ip     `json:"ipv4"`
+	}
+	var active []dev
+	for _, d := range b.sim.devs {
+		if d.anonymous {
+			continue
+		}
+		t := "lan"
+		if d.iface == "802.11" {
+			t = "wlan"
+		}
+		active = append(active, dev{Name: d.name, MAC: strings.ToUpper(macStr(d.mac)), Type: t, IPv4: ip{d.ip4.String()}})
+	}
+	out := map[string]any{"data": map[string]any{
+		"active":  active,
+		"passive": []dev{{Name: "Gaeste-Laptop", MAC: "3C:22:FB:00:00:77", Type: "wlan", IPv4: ip{"192.168.178.77"}}},
+		"fbox":    []dev{{Name: "fritz.demo", MAC: strings.ToUpper(macStr(b.sim.router)), Type: "unknown", IPv4: ip{b.sim.routerV4.String()}}},
+	}}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func macStr(m pktgen.MAC) string {

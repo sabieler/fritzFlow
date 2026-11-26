@@ -34,6 +34,9 @@
 </header>
 
 <div id="banners"></div>
+<div id="blockHint" class="banner-wrap" hidden>
+  <div class="banner warn">FritzFlow empfängt keine Daten. Läuft ein Werbe- oder Tracker-Blocker (z.&nbsp;B. in Vivaldi, Brave, uBlock Origin)? Bitte für <b>localhost</b> deaktivieren und die Seite neu laden. Läuft FritzFlow noch?</div>
+</div>
 
 <main>
   <section class="kpis">
@@ -63,10 +66,27 @@
     </article>
   </section>
 
+  <section class="card toolbar" aria-label="Filter">
+    <div class="tb-group"><span class="tb-label">Verkehr</span>
+      <div class="pills" id="kindPills" role="group">
+        <button type="button" data-v="wan" title="Verbindungen ins Internet">Internet</button>
+        <button type="button" data-v="int" title="Verkehr im Heimnetz und zur FRITZ!Box">Intern</button>
+        <button type="button" data-v="all">Alle</button>
+      </div>
+    </div>
+    <div class="tb-group"><span class="tb-label">Netz</span>
+      <div class="pills" id="netPills" role="group"></div>
+    </div>
+    <button id="devChip" class="chip" hidden></button>
+    <span class="spacer"></span>
+    <span class="muted" id="filterInfo"></span>
+  </section>
+
   <section class="grid-main">
     <article class="card flow-card">
       <div class="card-head">
         <h2>Live-Verkehr</h2>
+        <div class="mini-seg" data-view="flow" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Fest</button></div>
         <div class="legend"><span class="lg down"></span>Download<span class="lg up"></span>Upload</div>
       </div>
       <div class="flow-wrap" id="flowWrap">
@@ -80,7 +100,7 @@
     </article>
     <div class="side">
       <article class="card">
-        <div class="card-head"><h2>Top-Ziele</h2><span class="muted">nach Durchsatz</span></div>
+        <div class="card-head"><h2>Top-Ziele</h2><div class="mini-seg" data-view="dest" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Volumen</button></div></div>
         <ol id="topDest" class="rank"></ol>
       </article>
       <article class="card">
@@ -102,7 +122,7 @@
       </div>
     </article>
     <article class="card">
-      <div class="card-head"><h2>Geräte</h2><span class="muted" id="devCount"></span></div>
+      <div class="card-head"><h2>Geräte</h2><div class="mini-seg" data-view="dev" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">A–Z</button></div><span class="muted" id="devCount"></span></div>
       <ul id="devices" class="devices"></ul>
     </article>
   </section>
@@ -111,8 +131,6 @@
     <div class="card-head wrap">
       <h2>Verbindungen</h2>
       <div class="filters">
-        <button id="devChip" class="chip" hidden></button>
-        <label class="toggle"><input type="checkbox" id="onlyWan" checked><span class="track"></span>Nur Internet</label>
         <span class="muted" id="connCount"></span>
       </div>
     </div>
@@ -169,6 +187,14 @@
       <label class="radio"><input type="radio" name="captureMode" value="always"> Immer</label>
     </fieldset>
     <label class="radio"><input type="checkbox" name="reverseDns"> Unbekannte Ziel-IPs per Reverse-DNS benennen</label>
+    <fieldset class="field"><legend>Browser</legend>
+      <div class="row-btn">
+        <select name="browserSel" aria-label="Browser"></select>
+        <button type="button" id="browserTestBtn" class="btn">Testen</button>
+      </div>
+      <label class="field" id="browserCustomWrap" hidden><span>Programm oder Pfad</span><input name="browserCustom"></label>
+      <label class="radio"><input type="checkbox" name="openBrowser"> FritzFlow beim Programmstart automatisch im Browser öffnen</label>
+    </fieldset>
     <div id="setupMsg" class="msg" hidden></div>
     <div class="dlg-actions">
       <button type="button" id="cancelBtn" class="btn ghost">Abbrechen</button>

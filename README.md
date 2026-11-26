@@ -14,6 +14,9 @@ Abhängigkeiten.
 - **Hostnamen** aus DNS-Antworten, TLS-SNI und HTTP-Host; optional Reverse-DNS
 - **Gerätenamen** aus der FRITZ!Box (TR-064 oder – falls deaktiviert – Heimnetz-Übersicht)
 - **Download/Upload**, Verbindungen, aktive Geräte, 5-Minuten-Verlauf, Dienste-Verteilung
+- **Filter** für die ganze Ansicht: Verkehr *Internet / Intern / Alle*, Netz *LAN / WLAN 2,4 GHz / WLAN 5 GHz / Gast*, einzelnes Gerät, Suche
+- **Sortierung pro Ansicht**: nach Aktivität oder ruhig/statisch (Fest, Volumen, A–Z)
+- **Name, Modell und FRITZ!OS-Version** der Box werden angezeigt
 - Dark Mode (Standard) und Light Mode
 - **Demo-Modus** mit simulierter FRITZ!Box: `fritzflow -demo`
 
@@ -87,8 +90,20 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `reverse_dns` | `true` | unbekannte IPs per PTR benennen |
 | `listen` | `127.0.0.1:8484` | Adresse der Weboberfläche |
 | `open_browser` | `true` | Browser beim Start öffnen |
+| `browser` | *(Systemstandard)* | Browser für die Oberfläche, z. B. `vivaldi`, `Firefox` (macOS-App-Name) oder `C:\…\chrome.exe` – auch im Einstellungsdialog wählbar |
 
 Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-demo`, `-version`.
+
+## Fehlerbehebung
+
+- **Keine Live-Daten im Browser:** Werbe-/Tracker-Blocker (z. B. in Vivaldi, Brave, uBlock Origin)
+  können lokale Datenströme stören. FritzFlow weicht automatisch auf einfache Abfragen aus und
+  zeigt sonst einen Hinweis – dann den Blocker für `localhost` deaktivieren.
+- **„Auf 1-lan läuft bereits ein anderer Mitschnitt“:** Die FRITZ!Box erlaubt pro Schnittstelle nur
+  einen Mitschnitt. Läuft FritzFlow auf zwei Rechnern oder ist der Mitschnitt in der FRITZ!Box-Oberfläche
+  aktiv, wartet FritzFlow. Hängende Mitschnitte einer abgestürzten Instanz beendet FritzFlow selbst.
+- **Gerätenamen fehlen:** FritzFlow liest sie aus der Heimnetz-Übersicht bzw. per TR-064
+  (*Heimnetz → Netzwerk → Netzwerkeinstellungen → Zugriff für Anwendungen zulassen*).
 
 ## Sicherheit
 

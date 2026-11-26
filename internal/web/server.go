@@ -9,9 +9,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/sabieler/fritzFlow/internal/browser"
 	"github.com/sabieler/fritzFlow/internal/config"
 	"github.com/sabieler/fritzFlow/internal/engine"
 )
@@ -31,9 +33,13 @@ func Handler(e *engine.Engine, allowRemote bool) http.Handler {
 	sub, _ := fs.Sub(static, "static")
 	files := http.FileServer(http.FS(sub))
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/events", s.events)
+	// Neutral paths: ad/tracker blockers often block URLs containing "events".
+	mux.HandleFunc("/live", s.events)
+	mux.HandleFunc("/state", s.state)
 	mux.HandleFunc("/api/config", s.config)
 	mux.HandleFunc("/api/test", s.test)
+	mux.HandleFunc("/api/browsers", s.browsers)
+	mux.HandleFunc("/api/browser-test", s.browserTest)
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
@@ -109,6 +115,8 @@ type configView struct {
 	ReadOnly    bool   `json:"readOnly"`
 	Path        string `json:"path"`
 	PasswordEnv bool   `json:"passwordEnv"`
+	Browser     string `json:"browser"`
+	OpenBrowser bool   `json:"openBrowser"`
 }
 
 func (s *server) config(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +127,7 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 			FritzBox: c.FritzBox, Username: c.Username, PasswordSet: c.Password != "",
 			Interface: c.Interface, Snaplen: c.Snaplen, CaptureMode: c.CaptureMode,
 			ReverseDNS: c.ReverseDNS, ReadOnly: s.e.ReadOnly(), Path: s.e.ConfigPath(),
-			PasswordEnv: c.PasswordFromEnv(),
+			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser,
 		})
 	case http.MethodPost:
 		in, ok := readConfig(w, r)
@@ -145,6 +153,7 @@ func readConfig(w http.ResponseWriter, r *http.Request) (config.Config, bool) {
 	return config.Config{
 		FritzBox: v.FritzBox, Username: v.Username, Password: v.Password,
 		Interface: v.Interface, Snaplen: v.Snaplen, CaptureMode: v.CaptureMode, ReverseDNS: v.ReverseDNS,
+		Browser: v.Browser, OpenBrowser: v.OpenBrowser,
 	}, true
 }
 
@@ -163,6 +172,42 @@ func (s *server) test(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": msg})
+}
+
+// state returns the latest snapshot (polling fallback when SSE is blocked).
+func (s *server) state(w http.ResponseWriter, r *http.Request) {
+	s.e.Touch()
+	data, _ := s.e.Subscribe()
+	w.Header().Set("Cache-Control", "no-store")
+	if data == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
+}
+
+func (s *server) browsers(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"os": runtime.GOOS, "browsers": browser.Detect()})
+}
+
+func (s *server) browserTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var v struct {
+		Browser string `json:"browser"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&v); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "ungültige Anfrage"})
+		return
+	}
+	if err := browser.Open(v.Browser, "http://"+r.Host+"/"); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "message": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Browser wurde gestartet"})
 }
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {

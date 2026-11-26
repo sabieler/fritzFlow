@@ -22,7 +22,8 @@ type Host struct {
 	Name   string
 	Iface  string
 	Active bool
-	Router bool // the FRITZ!Box itself
+	Router bool   // the FRITZ!Box itself
+	Net    string // network segment label (LAN, WLAN 5 GHz, Gast …)
 }
 
 // Options tune the tracker.
@@ -84,6 +85,7 @@ type device struct {
 	ips            map[netip.Addr]time.Time
 	name           string
 	iface          string
+	net            string
 	online         bool // reported active by the FRITZ!Box
 	first, last    time.Time
 	tx, rx         uint64
@@ -498,12 +500,12 @@ func (t *Tracker) device(m mac, hasMAC bool, ip netip.Addr, now time.Time) *devi
 
 func (t *Tracker) applyHost(d *device) {
 	if h, ok := t.hostsByMAC[d.mac]; ok && d.mac != "" {
-		d.name, d.iface, d.online = h.Name, h.Iface, h.Active
+		d.name, d.iface, d.online, d.net = h.Name, h.Iface, h.Active, h.Net
 		return
 	}
 	for ip := range d.ips {
 		if h, ok := t.hostsByIP[ip]; ok {
-			d.name, d.iface, d.online = h.Name, h.Iface, h.Active
+			d.name, d.iface, d.online, d.net = h.Name, h.Iface, h.Active, h.Net
 			return
 		}
 	}
@@ -596,6 +598,7 @@ type DeviceView struct {
 	IPs    []string `json:"ips,omitempty"`
 	MAC    string   `json:"mac"`
 	Iface  string   `json:"iface"`
+	Net    string   `json:"net"`
 	Rx     uint64   `json:"rx"`
 	Tx     uint64   `json:"tx"`
 	RxRate float64  `json:"rxRate"`
@@ -766,7 +769,7 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 
 func (t *Tracker) deviceView(d *device, now time.Time) DeviceView {
 	v := DeviceView{
-		ID: d.key, Name: d.name, MAC: d.mac, Iface: d.iface,
+		ID: d.key, Name: d.name, MAC: d.mac, Iface: d.iface, Net: d.net,
 		Rx: d.rx, Tx: d.tx, RxRate: d.rxRate, TxRate: d.txRate,
 		Conns: d.conns, Online: d.online || (!d.last.IsZero() && now.Sub(d.last) < 5*time.Minute), Idle: -1,
 	}

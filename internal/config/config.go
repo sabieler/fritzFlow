@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/sabieler/fritzFlow/internal/browser"
 )
 
 // Capture modes.
@@ -37,6 +39,8 @@ type Config struct {
 	ReverseDNS  bool   `json:"reverse_dns"`
 	OpenBrowser bool   `json:"open_browser"`
 	InsecureTLS bool   `json:"insecure_tls"`
+	// Browser used to open the UI at startup ("" = system default).
+	Browser string `json:"browser,omitempty"`
 	// TR064URL overrides the TR-064 endpoint (default: same host, port 49000).
 	TR064URL string `json:"tr064_url,omitempty"`
 
@@ -95,6 +99,7 @@ func (c *Config) Normalize() {
 		c.CaptureMode = ModeOnDemand
 	}
 	c.TR064URL = strings.TrimRight(strings.TrimSpace(c.TR064URL), "/")
+	c.Browser = strings.TrimSpace(c.Browser)
 }
 
 // Validate reports configuration errors in user-facing German.
@@ -105,6 +110,9 @@ func (c Config) Validate() error {
 	}
 	if !ifaceRe.MatchString(c.Interface) {
 		return fmt.Errorf("ungültige Schnittstelle %q", c.Interface)
+	}
+	if err := browser.Validate(c.Browser); err != nil {
+		return err
 	}
 	if c.TR064URL != "" {
 		if u, err := url.Parse(c.TR064URL); err != nil || u.Host == "" {

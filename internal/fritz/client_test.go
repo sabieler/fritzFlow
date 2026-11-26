@@ -41,3 +41,33 @@ func TestParseDigest(t *testing.T) {
 		t.Fatal("basic must not parse")
 	}
 }
+
+func TestFirmwareVersion(t *testing.T) {
+	cases := map[[2]string]string{
+		{"154.08.54-138651", "BETA"}: "8.54 (Beta)",
+		{"154.07.57", ""}:            "7.57",
+		{"113.06.83", "inhaus"}:      "6.83 (Labor)",
+		{"", ""}:                     "",
+	}
+	for in, want := range cases {
+		if got := firmwareVersion(in[0], in[1]); got != want {
+			t.Errorf("%v: got %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestNetLabel(t *testing.T) {
+	cases := []struct{ typ, port, classes, props, ip, iface, want string }{
+		{"wlan", "WLAN", "wlan", "2,4 GHz, 72 / 72 Mbit/s", "192.168.3.5", "802.11", "WLAN 2,4 GHz"},
+		{"wlan", "WLAN", "wlan", "5 GHz, 520 / 585 Mbit/s", "192.168.3.6", "802.11", "WLAN 5 GHz"},
+		{"ethernet", "LAN 1 mit 1 Gbit/s", "ethernet", "", "192.168.3.7", "Ethernet", "LAN"},
+		{"wlan", "WLAN", "wlan guest", "", "192.168.3.8", "802.11", "Gast"},
+		{"", "", "", "", "192.168.179.20", "802.11", "Gast"},
+		{"", "", "", "", "192.168.3.9", "802.11", "WLAN"},
+	}
+	for _, c := range cases {
+		if got := netLabel(c.typ, c.port, c.classes, c.props, c.ip, c.iface); got != c.want {
+			t.Errorf("%+v: got %q", c, got)
+		}
+	}
+}

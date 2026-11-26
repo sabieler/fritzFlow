@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -16,6 +17,10 @@ import (
 )
 
 var errIdle = errors.New("keine Daten von der FRITZ!Box empfangen (Zeitüberschreitung)")
+
+// ErrBusy means the box refused to start a capture (usually because another
+// capture on the same interface is still running).
+var ErrBusy = errors.New("FRITZ!Box startet keinen Mitschnitt")
 
 // ErrStreamEnded means the box closed the capture stream.
 var ErrStreamEnded = errors.New("Mitschnitt wurde von der FRITZ!Box beendet")
@@ -38,20 +43,65 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (c *Client) captureURL(sid, iface string, snaplen int, start bool) string {
+func (c *Client) captureURL(sid, iface string, snaplen int) string {
 	u := *c.base
 	u.Path = strings.TrimRight(u.Path, "/") + "/cgi-bin/capture_notimeout"
 	q := url.Values{}
 	q.Set("ifaceorminor", iface)
-	if start {
-		q.Set("snaplen", strconv.Itoa(snaplen))
-		q.Set("capture", "Start")
-	} else {
-		q.Set("capture", "Stop")
-	}
+	q.Set("snaplen", strconv.Itoa(snaplen))
+	q.Set("capture", "Start")
 	q.Set("sid", sid)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+var stopButtonRe = regexp.MustCompile(`id="uiStart_([^"]+)"\s+value="([^"]+)"[\s\S]{0,400}?id="uiStop_([^"]+)"\s+value="([^"]+)"`)
+
+// stopParams maps a start id like "1-lan" to the stop triple (type, minor,
+// iface) the box expects. It reads the capture page; "1-<name>" falls back
+// to the well-known pattern "1;-1;<name>".
+func (c *Client) stopParams(ctx context.Context, sid, iface string) (string, string, string, bool) {
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + "/data.lua"
+	form := url.Values{"sid": {sid}, "page": {"cap"}, "xhr": {"1"}, "xhrId": {"all"}}
+	if req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(form.Encode())); err == nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if resp, err := c.short.Do(req); err == nil {
+			page, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+			resp.Body.Close()
+			for _, m := range stopButtonRe.FindAllStringSubmatch(string(page), -1) {
+				if m[1] == m[3] && m[2] == iface {
+					if p := strings.SplitN(m[4], ";", 3); len(p) == 3 {
+						return p[0], p[1], p[2], true
+					}
+				}
+			}
+		}
+	}
+	if name, ok := strings.CutPrefix(iface, "1-"); ok && name != "" {
+		return "1", "-1", name, true
+	}
+	return "", "", "", false
+}
+
+// StopCapture stops a running capture on iface (also one left over by a
+// previous, crashed FritzFlow process).
+func (c *Client) StopCapture(ctx context.Context, sid, iface string) {
+	typ, minor, name, ok := c.stopParams(ctx, sid, iface)
+	if !ok {
+		return
+	}
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + "/cgi-bin/capture_notimeout"
+	u.RawQuery = url.Values{"iface": {name}, "minor": {minor}, "type": {typ}, "capture": {"Stop"}, "sid": {sid}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return
+	}
+	if resp, err := c.short.Do(req); err == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		resp.Body.Close()
+	}
 }
 
 // Capture streams packets from the box until ctx is cancelled or the stream
@@ -61,7 +111,7 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 	received *atomic.Uint64, fn func(pcap.Packet)) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.captureURL(sid, iface, snaplen, true), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.captureURL(sid, iface, snaplen), nil)
 	if err != nil {
 		return err
 	}
@@ -87,7 +137,7 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 			return fmt.Errorf("%w: die FRITZ!Box liefert keinen Mitschnitt – hat der Benutzer das Recht \"FRITZ!Box Einstellungen\" und stimmt die Schnittstelle %q? (%v)", ErrSession, iface, err)
 		}
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			return fmt.Errorf("%w: leere Antwort – Schnittstelle %q existiert evtl. nicht", ErrSession, iface)
+			return fmt.Errorf("%w: leere Antwort – läuft auf %q schon ein anderer Mitschnitt?", ErrBusy, iface)
 		}
 		return c.netErr(err)
 	}
@@ -103,18 +153,5 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 			return err
 		}
 		fn(p)
-	}
-}
-
-// StopCapture asks the box to stop a running capture (best effort; closing
-// the stream already ends it).
-func (c *Client) StopCapture(ctx context.Context, sid, iface string) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.captureURL(sid, iface, 0, false), nil)
-	if err != nil {
-		return
-	}
-	if resp, err := c.short.Do(req); err == nil {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-		resp.Body.Close()
 	}
 }

@@ -11,13 +11,13 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
 	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/sabieler/fritzFlow/internal/browser"
 	"github.com/sabieler/fritzFlow/internal/config"
 	"github.com/sabieler/fritzFlow/internal/engine"
 	"github.com/sabieler/fritzFlow/internal/fakebox"
@@ -111,7 +111,10 @@ func run() error {
 	uiURL := "http://" + net.JoinHostPort(host, strconv.Itoa(addr.Port))
 	logger.Printf("FritzFlow %s läuft: %s  (Beenden mit Strg+C)", version, uiURL)
 	if cfg.OpenBrowser && !*noBrowser {
-		openBrowser(uiURL)
+		if err := browser.Open(cfg.Browser, uiURL); err != nil {
+			logger.Printf("Browser %q konnte nicht gestartet werden (%v) – öffne Standardbrowser", cfg.Browser, err)
+			_ = browser.Open("", uiURL)
+		}
 	}
 
 	eng.Run(ctx)
@@ -144,19 +147,4 @@ func listenWithFallback(addr string) (net.Listener, error) {
 		}
 	}
 	return nil, fmt.Errorf("kann %s nicht öffnen: %w", addr, err)
-}
-
-func openBrowser(u string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
-	case "darwin":
-		cmd = exec.Command("open", u)
-	default:
-		cmd = exec.Command("xdg-open", u)
-	}
-	if err := cmd.Start(); err == nil {
-		go func() { _ = cmd.Wait() }()
-	}
 }

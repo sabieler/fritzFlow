@@ -248,3 +248,60 @@ func pbkdf2SHA256(password, salt []byte, iter int) []byte {
 	}
 	return t
 }
+
+// BoxInfo describes the FRITZ!Box hardware and firmware.
+type BoxInfo struct {
+	Model    string // e.g. "FRITZ!Box 7590"
+	Firmware string // e.g. "8.54 (Beta)"
+}
+
+// Info reads jason_boxinfo.xml (no login needed). The serial number in that
+// file is deliberately ignored.
+func (c *Client) Info(ctx context.Context) (BoxInfo, error) {
+	u := *c.base
+	u.Path = strings.TrimRight(u.Path, "/") + "/jason_boxinfo.xml"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return BoxInfo{}, err
+	}
+	resp, err := c.short.Do(req)
+	if err != nil {
+		return BoxInfo{}, c.netErr(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return BoxInfo{}, fmt.Errorf("jason_boxinfo.xml: HTTP %d", resp.StatusCode)
+	}
+	var x struct {
+		Name    string `xml:"Name"`
+		Version string `xml:"Version"`
+		Lab     string `xml:"Lab"`
+	}
+	if err := xml.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&x); err != nil {
+		return BoxInfo{}, err
+	}
+	return BoxInfo{Model: strings.TrimSpace(x.Name), Firmware: firmwareVersion(x.Version, x.Lab)}, nil
+}
+
+// firmwareVersion turns "154.08.54-138651" into "8.54" (+ lab marker).
+func firmwareVersion(v, lab string) string {
+	v = strings.TrimSpace(v)
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		v = v[:i]
+	}
+	if p := strings.Split(v, "."); len(p) == 3 {
+		major := strings.TrimLeft(p[1], "0")
+		if major == "" {
+			major = "0"
+		}
+		v = major + "." + p[2]
+	}
+	switch lab = strings.TrimSpace(lab); {
+	case v == "":
+	case strings.EqualFold(lab, "beta"):
+		v += " (Beta)"
+	case lab != "":
+		v += " (Labor)"
+	}
+	return v
+}
