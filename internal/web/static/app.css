@@ -272,7 +272,9 @@ main { position: relative; z-index: 1; padding: 18px 24px 28px; display: grid; g
   #boxOn .legend.mini { grid-column: 2; }
 }
 .legend .lg.cap { background: transparent; border-top: 2px dashed var(--text2); height: 0; box-shadow: none; }
-.side { display: grid; gap: 18px; align-content: start; }
+.side { display: grid; gap: 18px; align-content: stretch; }
+.side > [data-tile="dest"] { display: flex; flex-direction: column; min-height: 0; }
+.side > [data-tile="dest"] .rank { flex: 1; min-height: 0; overflow: hidden; align-content: start; }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 18px; }
 
 /* ---------- flow map ---------- */

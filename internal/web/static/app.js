@@ -825,7 +825,10 @@ function renderTopDest(conns) {
     d.rate += c.rxRate + c.txRate; d.bytes += c.rx + c.tx; d.n++;
   }
   const byVolume = S.order.dest === 'static';
-  const list = [...agg.values()].sort((a, b) => byVolume ? b.bytes - a.bytes || a.label.localeCompare(b.label) : b.rate - a.rate || b.bytes - a.bytes).slice(0, 7);
+  // as many entries as fit into the tile (it is as tall as the Live-Verkehr map)
+  const room = $('#topDest').clientHeight;
+  const fit = room > 0 ? clamp(Math.floor((room + 4) / 48), 5, 25) : 7;
+  const list = [...agg.values()].sort((a, b) => byVolume ? b.bytes - a.bytes || a.label.localeCompare(b.label) : b.rate - a.rate || b.bytes - a.bytes).slice(0, fit);
   const max = Math.max(1, ...list.map((d) => d.rate));
   const ol = $('#topDest');
   ol.innerHTML = list.length ? list.map((d) => `
