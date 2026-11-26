@@ -1327,7 +1327,7 @@ async function fillBrowsers(current) {
   const known = current === '' || browserList.browsers.some((b) => b.cmd === current);
   sel.value = known ? current : 'custom';
   form.browserCustom.value = known ? '' : current;
-  form.browserCustom.placeholder = { windows: 'C:\\Pfad\\zu\\browser.exe', darwin: 'z. B. Firefox oder /Applications/Arc.app' }[browserList.os] || 'z. B. firefox oder /usr/bin/vivaldi';
+  form.browserCustom.placeholder = { windows: 'C:\\Programme\\Browser\\browser.exe', darwin: '/Applications/Arc.app' }[browserList.os] || '/usr/bin/vivaldi';
   $('#browserCustomWrap').hidden = sel.value !== 'custom';
 }
 form.browserSel.addEventListener('change', () => { $('#browserCustomWrap').hidden = form.browserSel.value !== 'custom'; });

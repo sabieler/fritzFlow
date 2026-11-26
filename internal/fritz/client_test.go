@@ -1,8 +1,10 @@
 package fritz
 
 import (
+	"context"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 )
 
@@ -97,6 +99,18 @@ func TestHasAddr(t *testing.T) {
 	}{{"192.168.178.20", true}, {"::ffff:192.168.178.20", true}, {"fe80::1%eth0", true}, {"192.168.178.21", false}} {
 		if got := hasAddr(addrs, netip.MustParseAddr(tc.a).Unmap()); got != tc.want {
 			t.Errorf("hasAddr(%s) = %v, want %v", tc.a, got, tc.want)
+		}
+	}
+}
+
+func TestHostListNeverLeavesTheBox(t *testing.T) {
+	c, err := New("http://fritz.box", "", "u", "p", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"http://evil.example/devicehostlist.lua", "//evil.example/x", "devicehostlist.lua"} {
+		if _, err := c.fetchHostList(context.Background(), p); err == nil || !strings.Contains(err.Error(), "unerwartete Adresse") {
+			t.Errorf("%q: want rejection, got %v", p, err)
 		}
 	}
 }

@@ -293,7 +293,12 @@ func (c *Client) fetchHostList(ctx context.Context, path string) ([]Host, error)
 	if err != nil {
 		return nil, err
 	}
-	u := c.tr064.ResolveReference(ref)
+	if (ref.Host != "" && ref.Host != c.tr064.Host) || !strings.HasPrefix(ref.Path, "/") {
+		return nil, errors.New("Geräteliste: unerwartete Adresse in der Antwort der FRITZ!Box")
+	}
+	// never follow the box's answer to another server: keep scheme and host
+	u := *c.tr064
+	u.Path, u.RawQuery = ref.Path, ref.RawQuery
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err

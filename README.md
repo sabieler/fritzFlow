@@ -149,7 +149,7 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `listen` | `127.0.0.1:8484` | Adresse der Weboberfläche |
 | `open_browser` | `true` | Browser beim Start öffnen |
 | `exit_after_minutes` | `2` | FritzFlow beendet sich so viele Minuten nach dem Schließen des letzten Tabs; `0` = weiterlaufen. Gilt nicht bei `capture_mode: always`; auch im Einstellungsdialog einstellbar |
-| `browser` | *(Systemstandard)* | Browser für die Oberfläche, z. B. `vivaldi`, `Firefox` (macOS-App-Name) oder `C:\…\chrome.exe` – auch im Einstellungsdialog wählbar |
+| `browser` | *(Systemstandard)* | Browser für die Oberfläche: ein im Einstellungsdialog angebotener Browser oder der vollständige Pfad zur Programmdatei (z. B. `/usr/bin/vivaldi`, `C:\…\chrome.exe`, `/Applications/Arc.app`) |
 
 Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <minuten>` (überschreibt `exit_after_minutes`, `0` = nie beenden), `-demo`, `-version`.
 
@@ -199,7 +199,11 @@ Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <
 
 - Die Oberfläche lauscht standardmäßig nur auf `127.0.0.1`. Andere Hostnamen werden abgewiesen
   (Schutz vor DNS-Rebinding), schreibende Anfragen von fremden Webseiten ebenfalls.
-- Wer `listen` auf `0.0.0.0` stellt, macht den Datenverkehr für alle im LAN sichtbar.
+- Wer `listen` auf `0.0.0.0` stellt, macht den Datenverkehr für alle im LAN sichtbar. **Einstellungen,
+  Verbindungstests und der Browser-Start sind aber nur am Rechner selbst möglich** (Anfragen von
+  `localhost`); aus dem LAN lässt sich nur zusehen.
+- Als Browser startet FritzFlow ausschließlich einen erkannten Browser oder eine Programmdatei mit
+  vollständigem Pfad – nie einen frei eingegebenen Befehl.
 - Das FRITZ!Box-Passwort steht im Klartext in der Konfigurationsdatei (nur für deinen Benutzer
   lesbar). Wer das vermeiden will, nutzt `FRITZFLOW_PASSWORD` und einen eigenen, eingeschränkten
   FRITZ!Box-Benutzer.

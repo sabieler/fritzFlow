@@ -60,6 +60,15 @@ func isLocalHost(hostport string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+func isLoopbackRemote(remoteAddr string) bool {
+	h, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		h = remoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 func (s *server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -77,6 +86,13 @@ func (s *server) guard(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'")
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			// Settings, connection tests and starting a browser are only allowed
+			// from this computer – even when the UI is shared in the LAN.
+			if !isLoopbackRemote(r.RemoteAddr) {
+				writeJSON(w, http.StatusForbidden, map[string]any{"ok": false,
+					"message": "Einstellungen lassen sich nur an dem Rechner ändern, auf dem FritzFlow läuft."})
+				return
+			}
 			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 				http.Error(w, "cross-site request", http.StatusForbidden)
 				return
@@ -207,6 +223,10 @@ func (s *server) browserTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&v); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "ungültige Anfrage"})
+		return
+	}
+	if !isLocalHost(r.Host) {
+		writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "message": "nur über localhost möglich"})
 		return
 	}
 	if err := browser.Open(v.Browser, "http://"+r.Host+"/"); err != nil {

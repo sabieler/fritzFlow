@@ -97,41 +97,63 @@ func Detect() []Browser {
 	return out
 }
 
-// Open opens url in the given browser ("" = system default).
-func Open(b, url string) error {
+// Resolve turns a configured browser into the program that is actually
+// started. Only two kinds of values are accepted, so a value coming from the
+// web UI can never run an arbitrary command:
+//   - a browser from Detect() (its program comes from our own list), or
+//   - an absolute path to an existing program file (macOS: also an .app bundle).
+//
+// "" means the system default browser.
+func Resolve(b string) (string, error) {
 	b = strings.TrimSpace(b)
 	if err := Validate(b); err != nil {
+		return "", err
+	}
+	if b == "" {
+		return "", nil
+	}
+	for _, d := range Detect() {
+		if d.Cmd == b {
+			if runtime.GOOS == "darwin" || filepath.IsAbs(d.Cmd) {
+				return d.Cmd, nil
+			}
+			return exec.LookPath(d.Cmd) // name from our own candidate list
+		}
+	}
+	if filepath.IsAbs(b) && fileExists(b) {
+		return filepath.Clean(b), nil
+	}
+	return "", errors.New("unbekannter Browser – bitte aus der Liste wählen oder den vollständigen Pfad zur Programmdatei angeben")
+}
+
+// Open opens url in the given browser ("" = system default).
+func Open(b, url string) error {
+	prog, err := Resolve(b)
+	if err != nil {
 		return err
 	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		switch {
-		case b == "":
+		if prog == "" {
 			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-		case fileExists(b):
-			cmd = exec.Command(b, url)
-		default: // e.g. "chrome", "msedge", "firefox" via App Paths
-			cmd = exec.Command("cmd", "/c", "start", "", b, url)
+		} else {
+			cmd = exec.Command(prog, url)
 		}
 	case "darwin":
 		switch {
-		case b == "":
+		case prog == "":
 			cmd = exec.Command("open", url)
-		case fileExists(b) && !strings.HasSuffix(strings.TrimRight(b, "/"), ".app"):
-			cmd = exec.Command(b, url)
-		default: // app name or .app bundle path
-			cmd = exec.Command("open", "-a", b, url)
+		case strings.HasSuffix(strings.TrimRight(prog, "/"), ".app") || !filepath.IsAbs(prog):
+			cmd = exec.Command("open", "-a", prog, url) // app bundle or detected app name
+		default:
+			cmd = exec.Command(prog, url)
 		}
 	default:
-		if b == "" {
+		if prog == "" {
 			cmd = exec.Command("xdg-open", url)
 		} else {
-			p, err := exec.LookPath(b)
-			if err != nil {
-				return errors.New("Browser \"" + b + "\" nicht gefunden")
-			}
-			cmd = exec.Command(p, url)
+			cmd = exec.Command(prog, url)
 		}
 	}
 	detach(cmd)

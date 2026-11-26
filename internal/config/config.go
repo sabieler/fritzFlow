@@ -138,7 +138,7 @@ func (c Config) Validate() error {
 	if !ifaceRe.MatchString(c.Interface) {
 		return fmt.Errorf("ungültige Schnittstelle %q", c.Interface)
 	}
-	if err := browser.Validate(c.Browser); err != nil {
+	if _, err := browser.Resolve(c.Browser); err != nil {
 		return err
 	}
 	if c.TR064URL != "" {

@@ -23,6 +23,9 @@ const (
 // MAC is an Ethernet address.
 type MAC [6]byte
 
+// maxSnap bounds all lengths written into pcap headers (they are uint32).
+const maxSnap = 262144
+
 // Writer writes a little-endian classic pcap stream (link type Ethernet).
 type Writer struct {
 	w    *bufio.Writer
@@ -32,6 +35,9 @@ type Writer struct {
 
 // NewWriter writes the global header.
 func NewWriter(w io.Writer, snaplen int) (*Writer, error) {
+	if snaplen <= 0 || snaplen > maxSnap {
+		snaplen = maxSnap
+	}
 	bw := bufio.NewWriterSize(w, 64*1024)
 	var h [24]byte
 	binary.LittleEndian.PutUint32(h[0:], 0xa1b2c3d4)
@@ -47,8 +53,8 @@ func NewWriter(w io.Writer, snaplen int) (*Writer, error) {
 
 // Write emits one frame truncated to the snaplen; origLen is the claimed wire length.
 func (pw *Writer) Write(ts time.Time, frame []byte, origLen int) error {
-	incl := min(len(frame), pw.snap)
-	origLen = max(origLen, len(frame))
+	incl := min(len(frame), pw.snap, maxSnap)
+	origLen = min(max(origLen, len(frame)), maxSnap)
 	h := pw.hdr[:]
 	binary.LittleEndian.PutUint32(h[0:], uint32(ts.Unix()))
 	binary.LittleEndian.PutUint32(h[4:], uint32(ts.Nanosecond()/1000))
