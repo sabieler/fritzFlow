@@ -117,6 +117,7 @@ type configView struct {
 	PasswordEnv bool   `json:"passwordEnv"`
 	Browser     string `json:"browser"`
 	OpenBrowser bool   `json:"openBrowser"`
+	BoxStats    bool   `json:"boxStats"`
 }
 
 func (s *server) config(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +128,7 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 			FritzBox: c.FritzBox, Username: c.Username, PasswordSet: c.Password != "",
 			Interface: c.Interface, Snaplen: c.Snaplen, CaptureMode: c.CaptureMode,
 			ReverseDNS: c.ReverseDNS, ReadOnly: s.e.ReadOnly(), Path: s.e.ConfigPath(),
-			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser,
+			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser, BoxStats: c.BoxStats,
 		})
 	case http.MethodPost:
 		in, ok := readConfig(w, r)
@@ -153,7 +154,7 @@ func readConfig(w http.ResponseWriter, r *http.Request) (config.Config, bool) {
 	return config.Config{
 		FritzBox: v.FritzBox, Username: v.Username, Password: v.Password,
 		Interface: v.Interface, Snaplen: v.Snaplen, CaptureMode: v.CaptureMode, ReverseDNS: v.ReverseDNS,
-		Browser: v.Browser, OpenBrowser: v.OpenBrowser,
+		Browser: v.Browser, OpenBrowser: v.OpenBrowser, BoxStats: v.BoxStats,
 	}, true
 }
 

@@ -54,12 +54,14 @@
       <div class="kpi-head"><span class="kpi-icon down">↓</span>Download</div>
       <div class="kpi-value"><span class="num" id="downVal">0</span><span class="unit" id="downUnit">Mbit/s</span></div>
       <canvas class="spark" id="sparkDown"></canvas>
+      <div class="linebar" id="lineDown" hidden><i style="background:linear-gradient(90deg,var(--down),var(--down2))"></i></div>
       <div class="kpi-foot" id="downFoot">–</div>
     </article>
     <article class="card kpi" data-tile="kpi-up" data-title="Upload"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <div class="kpi-head"><span class="kpi-icon up">↑</span>Upload</div>
       <div class="kpi-value"><span class="num" id="upVal">0</span><span class="unit" id="upUnit">Mbit/s</span></div>
       <canvas class="spark" id="sparkUp"></canvas>
+      <div class="linebar" id="lineUp" hidden><i style="background:linear-gradient(90deg,var(--up),var(--up2))"></i></div>
       <div class="kpi-foot" id="upFoot">–</div>
     </article>
     <article class="card kpi" data-tile="kpi-conn" data-title="Verbindungen"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
@@ -111,6 +113,21 @@
       </div>
     </article>
     <div class="side">
+      <article class="card" data-tile="box" data-title="FRITZ!Box-Auslastung">
+        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2 id="boxTitle">FRITZ!Box</h2><span class="muted" id="boxSub"></span></div>
+        <div id="boxOff" class="box-off" hidden></div>
+        <div id="boxOn">
+          <div class="gauges">
+            <div class="gauge" id="gCpu"><canvas></canvas><div><b>–</b><span>CPU</span></div></div>
+            <div class="gauge" id="gTemp"><canvas></canvas><div><b>–</b><span>Temp.</span></div></div>
+            <div class="gauge" id="gRam"><canvas></canvas><div><b>–</b><span>RAM</span></div></div>
+            <div class="gauge" id="gPow"><canvas></canvas><div><b>–</b><span>Energie</span></div></div>
+          </div>
+          <div class="wanline" id="wanLine"></div>
+          <div class="boxhist"><canvas id="boxHist"></canvas></div>
+          <div class="legend mini"><span class="lg down"></span>CPU-Last<span class="lg temp"></span>Temperatur<span class="muted">· letzte 24 h</span></div>
+        </div>
+      </article>
       <article class="card" data-tile="dest" data-title="Top-Ziele">
         <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Top-Ziele</h2><div class="mini-seg" data-view="dest" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Volumen</button></div></div>
         <ol id="topDest" class="rank"></ol>
@@ -213,6 +230,7 @@
       <label class="radio"><input type="radio" name="captureMode" value="always"> Immer</label>
     </fieldset>
     <label class="radio"><input type="checkbox" name="reverseDns"> Unbekannte Ziel-IPs per Reverse-DNS benennen</label>
+    <label class="radio"><input type="checkbox" name="boxStats"> FRITZ!Box-Daten anzeigen: Online-Monitor (alle 5 s), CPU, Temperatur, RAM, Energie (alle 30 s)</label>
     <fieldset class="field"><legend>Browser</legend>
       <div class="row-btn">
         <select name="browserSel" aria-label="Browser"></select>

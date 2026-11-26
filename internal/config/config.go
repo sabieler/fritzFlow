@@ -39,6 +39,8 @@ type Config struct {
 	ReverseDNS  bool   `json:"reverse_dns"`
 	OpenBrowser bool   `json:"open_browser"`
 	InsecureTLS bool   `json:"insecure_tls"`
+	// BoxStats enables polling CPU/temperature/RAM/energy of the box.
+	BoxStats bool `json:"box_stats"`
 	// Browser used to open the UI at startup ("" = system default).
 	Browser string `json:"browser,omitempty"`
 	// TR064URL overrides the TR-064 endpoint (default: same host, port 49000).
@@ -56,6 +58,7 @@ func Default() Config {
 		Listen:      "127.0.0.1:8484",
 		CaptureMode: ModeOnDemand,
 		ReverseDNS:  true,
+		BoxStats:    true,
 		OpenBrowser: true,
 		InsecureTLS: true, // FRITZ!Box uses a self-signed certificate
 	}

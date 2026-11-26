@@ -42,22 +42,26 @@ const (
 
 // Status describes what the engine is doing.
 type Status struct {
-	State      string  `json:"state"`
-	Message    string  `json:"message"`
-	Since      int64   `json:"since"`
-	Box        string  `json:"box"`
-	Iface      string  `json:"iface"`
-	Snaplen    int     `json:"snaplen"`
-	Mode       string  `json:"mode"`
-	StreamRate float64 `json:"streamRate"`
-	HostsInfo  string  `json:"hostsInfo"`
-	Demo       bool    `json:"demo"`
-	ReadOnly   bool    `json:"readOnly"`
-	Version    string  `json:"version"`
-	Viewers    int32   `json:"viewers"`
-	BoxName    string  `json:"boxName"`
-	BoxModel   string  `json:"boxModel"`
-	BoxOS      string  `json:"boxOS"`
+	State      string            `json:"state"`
+	Message    string            `json:"message"`
+	Since      int64             `json:"since"`
+	Box        string            `json:"box"`
+	Iface      string            `json:"iface"`
+	Snaplen    int               `json:"snaplen"`
+	Mode       string            `json:"mode"`
+	StreamRate float64           `json:"streamRate"`
+	HostsInfo  string            `json:"hostsInfo"`
+	Demo       bool              `json:"demo"`
+	ReadOnly   bool              `json:"readOnly"`
+	Version    string            `json:"version"`
+	Viewers    int32             `json:"viewers"`
+	BoxName    string            `json:"boxName"`
+	BoxModel   string            `json:"boxModel"`
+	BoxOS      string            `json:"boxOS"`
+	BoxStats   bool              `json:"boxStats"`
+	Load       *fritz.BoxLoad    `json:"load,omitempty"`
+	WAN        *fritz.WANMonitor `json:"wan,omitempty"`
+	LoadInfo   string            `json:"loadInfo,omitempty"`
 }
 
 type message struct {
@@ -306,6 +310,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.supervise(ctx, &wg, "tick", e.tickLoop)
 	e.supervise(ctx, &wg, "capture", e.captureLoop)
 	e.supervise(ctx, &wg, "hosts", e.hostsLoop)
+	e.supervise(ctx, &wg, "load", e.loadLoop)
 	wg.Wait()
 }
 
@@ -374,6 +379,10 @@ func (e *Engine) tickLoop(ctx context.Context) {
 			st.Box, st.Iface, st.Snaplen, st.Mode = cfg.FritzBox, cfg.Interface, cfg.Snaplen, cfg.CaptureMode
 			st.Demo, st.ReadOnly, st.Version = e.opt.Demo, e.opt.ReadOnly, e.opt.Version
 			st.Viewers = e.viewers.Load()
+			st.BoxStats = cfg.BoxStats
+			if !cfg.BoxStats {
+				st.Load, st.LoadInfo, st.WAN = nil, "", nil
+			}
 			b, err := json.Marshal(message{Status: st, Snapshot: snap})
 			if err != nil {
 				e.log.Printf("JSON-Fehler: %v", err)
@@ -567,6 +576,53 @@ func (e *Engine) setBoxName(name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.status.BoxName = name
+}
+
+// loadLoop polls the box utilisation every 30 s while capturing.
+func (e *Engine) loadLoop(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	var last time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cfg := e.Config()
+		sid, _ := e.sid.Load().(string)
+		if !cfg.BoxStats || sid == "" || e.state() != StateLive {
+			continue
+		}
+		cl, err := e.clientFor(cfg)
+		if err != nil {
+			continue
+		}
+		wctx, wcancel := context.WithTimeout(ctx, 4*time.Second)
+		if w, err := cl.Online(wctx, sid); err == nil {
+			e.mu.Lock()
+			e.status.WAN = w
+			e.mu.Unlock()
+		}
+		wcancel()
+		if time.Since(last) < 30*time.Second {
+			continue
+		}
+		last = time.Now()
+		lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		l, err := cl.Load(lctx, sid)
+		cancel()
+		e.mu.Lock()
+		if err != nil {
+			e.status.LoadInfo = "Auslastung nicht verfügbar: " + err.Error()
+			if errors.Is(err, fritz.ErrNoLoadAPI) {
+				last = time.Now().Add(time.Hour) // don't ask again soon
+			}
+		} else {
+			e.status.Load, e.status.LoadInfo = l, ""
+		}
+		e.mu.Unlock()
+	}
 }
 
 func (e *Engine) hostsLoop(ctx context.Context) {

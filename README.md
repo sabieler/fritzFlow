@@ -20,6 +20,10 @@ Abhängigkeiten.
 - **Kacheln ein-/ausblenden** über das Ansicht-Menü (ausgeblendete Kacheln kosten keine Rechenzeit)
 - **Sortierung pro Ansicht**: nach Aktivität oder ruhig/statisch (Fest, Volumen, A–Z)
 - **Name, Modell und FRITZ!OS-Version** der Box werden angezeigt
+- **FRITZ!Box-Daten** (abschaltbar, FRITZ!OS 8): CPU-Last, Temperatur, RAM, Energieverbrauch mit
+  24-h-Verlauf sowie der **Online-Monitor** – echter Durchsatz am Anschluss, Leitungsauslastung und
+  wie viel davon der Mitschnitt sieht (hardwarebeschleunigter Verkehr fehlt im Mitschnitt).
+  Zugangsdaten des Internetanbieters und die öffentliche IP werden dabei nicht ausgelesen.
 - Dark Mode (Standard) und Light Mode
 - **Demo-Modus** mit simulierter FRITZ!Box: `fritzflow -demo`
 
@@ -91,6 +95,7 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `snaplen` | `200` | Bytes pro Paket (64–1600) |
 | `capture_mode` | `on-demand` | oder `always` |
 | `reverse_dns` | `true` | unbekannte IPs per PTR benennen |
+| `box_stats` | `true` | FRITZ!Box-Daten abfragen (Online-Monitor alle 5 s, Auslastung alle 30 s) |
 | `listen` | `127.0.0.1:8484` | Adresse der Weboberfläche |
 | `open_browser` | `true` | Browser beim Start öffnen |
 | `browser` | *(Systemstandard)* | Browser für die Oberfläche, z. B. `vivaldi`, `Firefox` (macOS-App-Name) oder `C:\…\chrome.exe` – auch im Einstellungsdialog wählbar |

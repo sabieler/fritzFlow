@@ -68,6 +68,28 @@ func Start(user, password string) (*Box, error) {
 	mux.HandleFunc("/upnp/control/hosts", b.hosts)
 	mux.HandleFunc("/devicehostlist.lua", b.hostList)
 	mux.HandleFunc("/data.lua", b.dataLua)
+	mux.HandleFunc("/api/v0/generic/cpu", func(w http.ResponseWriter, r *http.Request) {
+		if !b.validSID(strings.TrimPrefix(r.Header.Get("Authorization"), "AVM-SID ")) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mk := func(base, amp float64) string {
+			v := make([]string, 240)
+			for i := range v {
+				v[i] = strconv.Itoa(int(base + amp*float64((i*7)%11)/10))
+			}
+			return strings.Join(v, ",")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"StatCPU": mk(12, 30), "StatTemperature": mk(66, 8), "StatRAMStrictlyUsed": mk(31, 2),
+			"StatRAMCacheUsed": mk(28, 2), "StatRAMPhysFree": mk(40, 2), "StatCurrentInterval": "1",
+		})
+	})
+	mux.HandleFunc("/api/v0/generic/power", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"rate_sumact":"31","rate_systemact":"65","rate_wlanact":"100","rate_dspact":"100","rate_usbhostact":"0"}`)
+	})
 	mux.HandleFunc("/jason_boxinfo.xml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/xml")
 		fmt.Fprint(w, `<j:BoxInfo xmlns:j="http://jason.avm.de/updatecheck/"><j:Name>FRITZ!Box Demo</j:Name><j:Version>164.08.00</j:Version><j:Serial>DEMO</j:Serial><j:Lab></j:Lab></j:BoxInfo>`)

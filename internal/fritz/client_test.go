@@ -71,3 +71,13 @@ func TestNetLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestSeries(t *testing.T) {
+	got := series("77,78,81,0,0")
+	if len(got) != 3 || got[0] != 81 || got[2] != 77 {
+		t.Fatalf("got %v", got)
+	}
+	if len(series("")) != 0 {
+		t.Fatal("empty")
+	}
+}

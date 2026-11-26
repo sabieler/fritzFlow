@@ -268,16 +268,19 @@ function stepTweens(dt) {
 }
 
 /* ---------- sparklines & history ---------- */
+// real internet throughput (online monitor) when available, else capture
+const hasWan = () => S.hist.length > 0 && S.hist[S.hist.length - 1].wrx != null;
+const val = (p, k) => (hasWan() && p['w' + k] != null ? p['w' + k] : p[k]);
 function drawSpark(cv, key, color) {
   const { ctx, w, h } = fitCanvas(cv);
   ctx.clearRect(0, 0, w, h);
   const pts = S.hist.slice(-60);
   if (pts.length < 2) return;
-  const max = Math.max(1, ...pts.map((p) => p[key]));
+  const max = Math.max(1, ...pts.map((p) => val(p, key)));
   const step = w / 59;
   const x0 = w - (pts.length - 1) * step;
   ctx.beginPath();
-  pts.forEach((p, i) => { const x = x0 + i * step, y = h - 2 - (p[key] / max) * (h - 6); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  pts.forEach((p, i) => { const x = x0 + i * step, y = h - 2 - (val(p, key) / max) * (h - 6); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
   ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
   ctx.lineTo(w, h); ctx.lineTo(x0, h); ctx.closePath();
   const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -293,8 +296,8 @@ function drawHistory() {
   const N = 300, padL = 64, padR = 8, padT = 10, padB = 20;
   const cw = w - padL - padR, ch = h - padT - padB;
   const pts = S.hist.slice(-N);
-  const maxRx = Math.max(1000, ...pts.map((p) => p.rx));
-  const maxTx = Math.max(1000, ...pts.map((p) => p.tx));
+  const maxRx = Math.max(1000, ...pts.map((p) => Math.max(val(p, 'rx'), p.rx)));
+  const maxTx = Math.max(1000, ...pts.map((p) => Math.max(val(p, 'tx'), p.tx)));
   const topH = ch * 0.66, botH = ch - topH;
   const axisY = padT + topH;
   ctx.font = '11px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
@@ -321,7 +324,7 @@ function drawHistory() {
     ctx.beginPath();
     pts.forEach((p, i) => {
       const x = x0 + i * step;
-      const y = axisY - sign * (p[key] / max) * (sign > 0 ? topH - 4 : botH - 4);
+      const y = axisY - sign * (val(p, key) / max) * (sign > 0 ? topH - 4 : botH - 4);
       i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     });
     const line = new Path2D(); // stroke separately
@@ -336,13 +339,24 @@ function drawHistory() {
   };
   area('rx', maxRx, 1, css.down2, css.down);
   area('tx', maxTx, -1, css.up2, css.up);
+  if (hasWan()) { // dashed: what the packet capture sees
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+    for (const [key, max, sign, col] of [['rx', maxRx, 1, css.text2], ['tx', maxTx, -1, css.text2]]) {
+      ctx.beginPath();
+      pts.forEach((p, i) => { const x = x0 + i * step, y = axisY - sign * (p[key] / max) * (sign > 0 ? topH - 4 : botH - 4); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.strokeStyle = withAlpha(col.startsWith('#') ? col : '#a3afc2', 0.7); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  $('#histNote').textContent = hasWan() ? 'letzte 5 Minuten · Fläche: Anschluss (Online-Monitor) · gestrichelt: Mitschnitt' : 'letzte 5 Minuten';
   if (histHover >= 0 && histHover < pts.length) {
     const p = pts[histHover], x = x0 + histHover * step;
     ctx.strokeStyle = css.text2; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.moveTo(x + 0.5, padT); ctx.lineTo(x + 0.5, axisY + botH); ctx.stroke(); ctx.setLineDash([]);
     const tip = $('#histTip');
     tip.hidden = false;
-    tip.innerHTML = `<b>${new Date(p.t).toLocaleTimeString('de-DE')}</b><div class="tr"><span>Download</span><span class="d">${fmtRate(p.rx)}</span></div><div class="tr"><span>Upload</span><span class="u">${fmtRate(p.tx)}</span></div>`;
+    tip.innerHTML = `<b>${new Date(p.t).toLocaleTimeString('de-DE')}</b><div class="tr"><span>Download</span><span class="d">${fmtRate(val(p, 'rx'))}</span></div><div class="tr"><span>Upload</span><span class="u">${fmtRate(val(p, 'tx'))}</span></div>` +
+      (p.wrx != null ? `<div class="tr"><span>im Mitschnitt</span><span>↓ ${fmtRate(p.rx)} · ↑ ${fmtRate(p.tx)}</span></div>` : '');
     const tw = tip.offsetWidth;
     tip.style.left = clamp(x + 12, 0, w - tw) + 'px'; tip.style.top = '8px';
   }
@@ -759,11 +773,31 @@ $('#devChip').addEventListener('click', () => setDevFilter(''));
 /* ---------- rendering ---------- */
 function renderKpis(s) {
   const t = s.totals;
-  const [dn, du] = rateParts(t.rxRate), [un, uu] = rateParts(t.txRate);
-  tweenNum($('#downVal'), t.rxRate, (v) => rateParts(v)[0]); $('#downUnit').textContent = du; void dn;
-  tweenNum($('#upVal'), t.txRate, (v) => rateParts(v)[0]); $('#upUnit').textContent = uu; void un;
-  $('#downFoot').textContent = 'Spitze 60 s: ' + fmtRate(Math.max(0, ...S.hist.slice(-60).map((p) => p.rx))) + ' · gesamt ' + fmtBytes(t.rx);
-  $('#upFoot').textContent = 'Spitze 60 s: ' + fmtRate(Math.max(0, ...S.hist.slice(-60).map((p) => p.tx))) + ' · gesamt ' + fmtBytes(t.tx);
+  const w = s.status.wan;
+  const down = w ? w.down : t.rxRate, up = w ? w.up : t.txRate;
+  tweenNum($('#downVal'), down, (v) => rateParts(v)[0]); $('#downUnit').textContent = rateParts(down)[1];
+  tweenNum($('#upVal'), up, (v) => rateParts(v)[0]); $('#upUnit').textContent = rateParts(up)[1];
+  const last60 = S.hist.slice(-60);
+  const coverage = (k) => {
+    const wSum = last60.reduce((a, p) => a + (p['w' + k] || 0), 0), cSum = last60.reduce((a, p) => a + p[k], 0);
+    return wSum > 50_000 ? Math.min(100, Math.round((cSum / wSum) * 100)) : null;
+  };
+  const foot = (k, lineKbit, cur, el, bar) => {
+    const parts = [];
+    if (w && lineKbit) {
+      const pct = Math.min(100, (cur / (lineKbit * 125)) * 100);
+      parts.push(`${Math.round(pct)} % von ${fmtRate(lineKbit * 125)}`);
+      $(bar).hidden = false; $(bar).firstElementChild.style.width = pct + '%';
+    } else $(bar).hidden = true;
+    parts.push('Spitze 60 s: ' + fmtRate(Math.max(0, ...last60.map((p) => val(p, k)))));
+    const cov = w ? coverage(k) : null;
+    if (cov != null) parts.push(`Mitschnitt sieht ${cov} %`);
+    else if (!w) parts.push('gesamt ' + fmtBytes(k === 'rx' ? t.rx : t.tx));
+    $(el).textContent = parts.join(' · ');
+    $(el).title = w ? 'Wert vom FRITZ!Box-Online-Monitor (echter Durchsatz am Anschluss). „Mitschnitt sieht“: Anteil, den der Paketmitschnitt erfasst – Verkehr, den die Box per Hardware beschleunigt, fehlt dort.' : 'Wert aus dem Paketmitschnitt';
+  };
+  foot('rx', w && w.lineDown, down, '#downFoot', '#lineDown');
+  foot('tx', w && w.lineUp, up, '#upFoot', '#lineUp');
   tweenNum($('#connVal'), t.connsWan, (v) => nf0.format(v));
   const tot = Math.max(1, t.tcp + t.udp);
   const segs = $('#connSplit').children;
@@ -880,6 +914,74 @@ for (const id of ['#dnsFails', '#connFails']) {
     $('#search').value = li.dataset.q; S.filter.q = li.dataset.q.toLowerCase(); render();
   });
 }
+
+/* ---------- FRITZ!Box utilisation ---------- */
+function drawGauge(el, frac, color, text, title) {
+  const cv = el.querySelector('canvas');
+  const { ctx, w, h } = fitCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2, r = Math.min(w, h) / 2 - 5;
+  const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
+  ctx.lineCap = 'round'; ctx.lineWidth = 7;
+  ctx.strokeStyle = css.grid; ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+  if (frac > 0) {
+    const g = ctx.createLinearGradient(0, h, w, 0);
+    g.addColorStop(0, withAlpha(color[0], 1)); g.addColorStop(1, withAlpha(color[1], 1));
+    ctx.strokeStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, a0, a0 + (a1 - a0) * clamp(frac, 0, 1)); ctx.stroke();
+  }
+  el.querySelector('b').textContent = text;
+  el.title = title || '';
+}
+function drawBoxHist(l) {
+  const { ctx, w, h } = fitCanvas($('#boxHist'));
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = css.grid; ctx.lineWidth = 1;
+  for (const f of [0, 0.5, 1]) { const y = 4 + (h - 16) * f + 0.5; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.fillStyle = css.muted; ctx.font = '10px system-ui, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('−24 h', 0, h - 2); ctx.textAlign = 'right'; ctx.fillText('jetzt', w, h - 2);
+  const line = (vals, max, c1, c2, fill) => {
+    if (!vals || vals.length < 2) return;
+    const step = w / 239, x0 = w - (vals.length - 1) * step;
+    ctx.beginPath();
+    vals.forEach((v, i) => { const x = x0 + i * step, y = 4 + (h - 16) * (1 - clamp(v / max, 0, 1)); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.strokeStyle = c1; ctx.lineWidth = 1.6; ctx.stroke();
+    if (fill) {
+      ctx.lineTo(w, h - 12); ctx.lineTo(x0, h - 12); ctx.closePath();
+      const g = ctx.createLinearGradient(0, 0, 0, h); g.addColorStop(0, withAlpha(c2, 0.35)); g.addColorStop(1, withAlpha(c2, 0));
+      ctx.fillStyle = g; ctx.fill();
+    }
+  };
+  line(l.cpuHist, 100, css.down2, css.down, true);
+  line(l.tempHist, 100, '#ff8a3d', '#ff8a3d', false);
+}
+function renderBox(st) {
+  $('#boxTitle').textContent = st.boxName || 'FRITZ!Box';
+  $('#boxSub').textContent = [st.boxModel, st.boxOS && 'FRITZ!OS ' + st.boxOS].filter(Boolean).join(' · ');
+  const off = !st.boxStats || !st.load;
+  $('#boxOn').hidden = off;
+  $('#boxOff').hidden = !off;
+  if (off) {
+    $('#boxOff').innerHTML = !st.boxStats
+      ? 'Auslastung ist abgeschaltet – <a href="#" data-open-setup>in den Einstellungen aktivieren</a>.'
+      : esc(st.loadInfo || 'Auslastung wird geladen …');
+    return;
+  }
+  const l = st.load;
+  const tempCol = l.temp >= 85 ? ['#ff5b6e', '#ff2d55'] : l.temp >= 70 ? ['#ffb547', '#ff8a3d'] : ['#2ee59d', '#10b981'];
+  drawGauge($('#gCpu'), l.cpu / 100, [css.down, css.down2], Math.round(l.cpu) + ' %', 'CPU-Last');
+  drawGauge($('#gTemp'), l.temp / 100, tempCol, Math.round(l.temp) + ' °C', 'Prozessortemperatur');
+  drawGauge($('#gRam'), (l.ramUsed + l.ramCache) / 100, [css.up, css.up2], Math.round(l.ramUsed + l.ramCache) + ' %',
+    `RAM: ${Math.round(l.ramUsed)} % belegt, ${Math.round(l.ramCache)} % Cache, ${Math.round(l.ramFree)} % frei`);
+  drawGauge($('#gPow'), l.power / 100, ['#2ee59d', '#ffc061'], Math.round(l.power) + ' %',
+    `Energieverbrauch: ${Math.round(l.power)} % des Maximalverbrauchs\nProzessor ${Math.round(l.powerSys)} % · WLAN ${Math.round(l.powerWlan)} % · DSL ${Math.round(l.powerDsl)} % · USB ${Math.round(l.powerUsb)} %`);
+  drawBoxHist(l);
+  const w = st.wan;
+  const dur = (sec) => { sec = sec | 0; const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60); return (d ? d + ' T ' : '') + (d || h ? h + ' h ' : '') + m + ' min'; };
+  $('#wanLine').innerHTML = w ? `<span class="dot ${w.connected ? '' : 'off'}"></span><b>Internet ${w.connected ? 'verbunden' : 'getrennt'}</b>` +
+    (w.connected && w.uptime ? `<span class="muted">seit ${dur(w.uptime)}</span>` : '') +
+    (w.lineDown ? `<span class="muted">· ${esc(w.media || '')} ${fmtRate(w.lineDown * 125)} ↓ / ${fmtRate(w.lineUp * 125)} ↑</span>` : '') : '';
+}
+document.addEventListener('click', (e) => { if (e.target.closest('#boxOff [data-open-setup]')) { e.preventDefault(); openSetup(); } });
 
 const rowEls = new Map();
 let firstTable = true;
@@ -1019,11 +1121,13 @@ function onSnapshot(s) {
   S.snap = s;
   S.devs = new Map(s.devices.map((d) => [d.id, d]));
   if (s.totals) {
-    S.hist.push({ t: s.t, rx: s.totals.rxRate, tx: s.totals.txRate });
+    const w = s.status.wan;
+    S.hist.push({ t: s.t, rx: s.totals.rxRate, tx: s.totals.txRate, wrx: w ? w.down : null, wtx: w ? w.up : null });
     if (S.hist.length > 300) S.hist.shift();
   }
   renderStatus(s.status);
   renderKpis(s);
+  if (tileShown('box')) renderBox(s.status);
   render();
   drawAllStatic();
 }
@@ -1116,6 +1220,7 @@ async function openSetup() {
   $('#testBtn').disabled = $('#saveBtn').disabled = !!c.readOnly;
   $('#cancelBtn').hidden = !c.passwordSet && !c.readOnly;
   form.openBrowser.checked = c.openBrowser !== false;
+  form.boxStats.checked = c.boxStats !== false;
   await fillBrowsers(c.browser || '');
   $('#cfgPath').textContent = c.path ? 'Gespeichert in: ' + c.path + (c.passwordEnv ? ' (Passwort aus FRITZFLOW_PASSWORD)' : '') : '';
   if (!dlg.open) dlg.showModal();
@@ -1158,6 +1263,7 @@ function formData() {
     captureMode: form.querySelector('input[name=captureMode]:checked')?.value || 'on-demand',
     reverseDns: form.reverseDns.checked,
     openBrowser: form.openBrowser.checked,
+    boxStats: form.boxStats.checked,
     browser: form.browserSel.value === 'custom' ? form.browserCustom.value.trim() : form.browserSel.value,
   };
 }
