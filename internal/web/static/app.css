@@ -277,7 +277,8 @@ body.resizing { cursor: ns-resize; user-select: none; }
 }
 .legend .lg.cap { background: transparent; border-top: 2px dashed var(--text2); height: 0; box-shadow: none; }
 .side { display: grid; gap: 18px; align-content: stretch; }
-.side > [data-tile="dest"] { display: flex; flex-direction: column; min-height: 0; }
+.side > [data-tile="dest"] { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+@media (min-width: 1201px) { .grid-main > .side { min-height: 0; overflow: clip; overflow-clip-margin: 48px; } } /* height comes from Live-Verkehr only */
 .side > [data-tile="dest"] .rank { flex: 1; min-height: 0; overflow: hidden; align-content: start; }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 18px; }
 
