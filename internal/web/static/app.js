@@ -803,19 +803,30 @@ function renderKpis(s) {
     const wSum = last60.reduce((a, p) => a + (p['w' + k] || 0), 0), cSum = last60.reduce((a, p) => a + p[k], 0);
     return wSum > 50_000 ? Math.min(100, Math.round((cSum / wSum) * 100)) : null;
   };
+  // Two fixed lines that never wrap mid-sentence (too long -> "…"):
+  // line 1: line usage + peak, line 2: what the packet capture sees / totals
+  // Two fixed lines that never wrap mid-sentence (too long -> "…"):
+  // line 1 explains the usage bar right above it, line 2: peak + capture share
   const foot = (k, lineKbit, cur, el, bar) => {
-    const parts = [];
+    const l1 = [], l2 = [];
+    const peak = 'Spitze ' + fmtRate(Math.max(0, ...last60.map((p) => val(p, k))));
     if (w && lineKbit) {
       const pct = Math.min(100, (cur / (lineKbit * 125)) * 100);
-      parts.push(`${Math.round(pct)} % von ${fmtRate(lineKbit * 125)}`);
+      l1.push(`Leitung ${Math.round(pct)}\u00a0% von ${fmtRate(lineKbit * 125)}`);
       $(bar).hidden = false; $(bar).firstElementChild.style.width = pct + '%';
-    } else $(bar).hidden = true;
-    parts.push('Spitze 60 s: ' + fmtRate(Math.max(0, ...last60.map((p) => val(p, k)))));
+      $(bar).title = `Auslastung der Internetleitung: ${Math.round(pct)}\u00a0% der Kapazität von ${fmtRate(lineKbit * 125)} sind gerade belegt.`;
+      l2.push(peak);
+    } else {
+      $(bar).hidden = true;
+      l1.push(peak);
+    }
     const cov = w ? coverage(k) : null;
-    if (cov != null) parts.push(`Mitschnitt sieht ${cov} %`);
-    else if (!w) parts.push('gesamt ' + fmtBytes(k === 'rx' ? t.rx : t.tx));
-    $(el).textContent = parts.join(' · ');
-    $(el).title = w ? 'Wert vom FRITZ!Box-Online-Monitor (echter Durchsatz am Anschluss). „Mitschnitt sieht“: Anteil, den der Paketmitschnitt erfasst – Verkehr, den die Box per Hardware beschleunigt, fehlt dort.' : 'Wert aus dem Paketmitschnitt';
+    if (cov != null) l2.push(`Mitschnitt ${cov}\u00a0%`);
+    else if (!w) l2.push('gesamt ' + fmtBytes(k === 'rx' ? t.rx : t.tx));
+    const html = `<div class="fl">${esc(l1.join(' · '))}</div><div class="fl">${esc(l2.join(' · '))}</div>`;
+    if ($(el).dataset.h !== html) { $(el).innerHTML = html; $(el).dataset.h = html; }
+    $(el).title = (w ? 'Durchsatz laut FRITZ!Box-Online-Monitor (echter Wert am Anschluss). Leitung: Anteil der Leitungskapazität, den Balken darüber zeigt ihn an. Spitze: höchster Wert der letzten 60 s. Mitschnitt: Anteil, den der Paketmitschnitt erfasst – Verkehr, den die Box per Hardware beschleunigt, fehlt dort.'
+      : 'Wert aus dem Paketmitschnitt. Spitze: höchster Wert der letzten 60 s.');
   };
   foot('rx', w && w.lineDown, down, '#downFoot', '#lineDown');
   foot('tx', w && w.lineUp, up, '#upFoot', '#lineUp');
