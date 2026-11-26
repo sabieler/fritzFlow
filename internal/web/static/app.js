@@ -1224,36 +1224,47 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-/* ---------- adjustable height of the Live-Verkehr map ---------- */
-(() => {
-  const DEF = 560, MIN = 320, MAX = 1400;
+/* ---------- adjustable heights (drag grip, double-click resets) ---------- */
+// cssVar holds the height; it is remembered per viewer under key.
+// measure returns the current height (default: the variable's value).
+function makeResizable({ grip, cssVar, key, DEF, MIN, MAX, onSet, measure }) {
   const root = document.documentElement;
+  const cur = measure || (() => parseFloat(getComputedStyle(root).getPropertyValue(cssVar)) || DEF);
   const set = (h, save) => {
     h = Math.round(clamp(h, MIN, MAX));
-    root.style.setProperty('--flow-h', h + 'px');
-    if (save) store.set('ff-flow-h', String(h));
-    if (S.snap) { F.sortedL = F.sortedR = 0; render(); }
+    root.style.setProperty(cssVar, h + 'px');
+    if (save) store.set(key, String(h));
+    onSet?.();
   };
-  const saved = parseInt(store.get('ff-flow-h', ''), 10);
+  const saved = parseInt(store.get(key, ''), 10);
   if (saved) set(saved, false);
-  const grip = $('#flowGrip'), wrap = $('#flowWrap');
   let startY = 0, startH = 0, moving = false;
   grip.addEventListener('pointerdown', (e) => {
-    moving = true; startY = e.clientY; startH = wrap.getBoundingClientRect().height;
+    moving = true; startY = e.clientY; startH = cur();
     grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); document.body.classList.add('resizing');
   });
   grip.addEventListener('pointermove', (e) => {
-    if (moving) root.style.setProperty('--flow-h', Math.round(clamp(startH + e.clientY - startY, MIN, MAX)) + 'px');
+    if (moving) root.style.setProperty(cssVar, Math.round(clamp(startH + e.clientY - startY, MIN, MAX)) + 'px');
   });
   const end = () => {
     if (!moving) return;
     moving = false; grip.classList.remove('drag'); document.body.classList.remove('resizing');
-    set(wrap.getBoundingClientRect().height, true);
+    set(cur(), true);
   };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
-  grip.addEventListener('dblclick', () => { store.set('ff-flow-h', ''); set(DEF, false); });
-})();
+  grip.addEventListener('dblclick', () => { store.set(key, ''); set(DEF, false); });
+}
+makeResizable({
+  grip: $('#flowGrip'), cssVar: '--flow-h', key: 'ff-flow-h', DEF: 560, MIN: 320, MAX: 1400,
+  measure: () => $('#flowWrap').getBoundingClientRect().height,
+  onSet: () => { if (S.snap) { F.sortedL = F.sortedR = 0; render(); } },
+});
+makeResizable({
+  grip: $('#connsGrip'), cssVar: '--conns-h', key: 'ff-conns-h', DEF: 560, MIN: 200, MAX: 3000,
+  // start from the visible height: with few rows the table is shorter than its limit
+  measure: () => $('#conns').closest('.table-wrap').getBoundingClientRect().height,
+});
 
 let rz;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { drawAllStatic(); if (S.snap) flowModel(S.snap); }, 120); });
