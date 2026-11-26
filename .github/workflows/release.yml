@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write     # Release anlegen
+  id-token: write     # Sigstore-Signatur für den Build-Nachweis
+  attestations: write # Build-Nachweis speichern
 
 jobs:
   release:
@@ -23,6 +25,16 @@ jobs:
 
       - name: Test und Build (alle Plattformen)
         run: VERSION="${GITHUB_REF_NAME}" ./scripts/build.sh
+
+      # Signierter Build-Nachweis (Sigstore): belegt, dass jede Datei genau aus diesem
+      # Commit per GitHub Actions gebaut wurde. Prüfen: gh attestation verify <datei> -R <owner>/<repo>
+      # Für private Repos kostenpflichtig, daher nur bei öffentlichem Repo.
+      - name: Build-Nachweis signieren
+        if: startsWith(github.ref, 'refs/tags/') && !github.event.repository.private
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/fritzflow-*
 
       - name: GitHub-Release veröffentlichen
         if: startsWith(github.ref, 'refs/tags/')

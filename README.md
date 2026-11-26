@@ -84,6 +84,23 @@ solange sie den Paketmitschnitt anbieten – Rückmeldungen sind willkommen.
 3. Im Einrichtungsdialog FRITZ!Box-Adresse, Benutzer und Passwort eingeben →
    **Verbindung testen** → **Speichern & starten**.
 
+### Echtheit der Datei prüfen (optional)
+
+Jede Programmdatei wird von GitHub Actions aus dem öffentlichen Quellcode gebaut und mit einem
+signierten **Build-Nachweis** versehen. Mit der [GitHub-CLI](https://cli.github.com/) lässt sich
+prüfen, dass die Datei unverändert aus diesem Repo stammt:
+
+```sh
+gh attestation verify fritzflow-windows-amd64.exe -R sabieler/fritzFlow
+```
+
+Ohne GitHub-CLI genügt der Abgleich mit den Prüfsummen aus `SHA256SUMS`
+(`sha256sum fritzflow-linux-amd64`, unter Windows `certutil -hashfile fritzflow-windows-amd64.exe SHA256`).
+
+Hinweis: Die Dateien sind nicht mit einem kostenpflichtigen Windows- bzw. Apple-Zertifikat signiert.
+Deshalb warnen Windows SmartScreen und macOS Gatekeeper beim ersten Start (siehe oben) – der
+Build-Nachweis ändert daran nichts, belegt aber die Herkunft.
+
 ### Empfohlener FRITZ!Box-Benutzer
 
 Lege unter *System → FRITZ!Box-Benutzer* einen eigenen Benutzer an (z. B. `fritzFlow`):
