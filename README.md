@@ -15,6 +15,9 @@ Abhängigkeiten.
 - **Gerätenamen** aus der FRITZ!Box (TR-064 oder – falls deaktiviert – Heimnetz-Übersicht)
 - **Download/Upload**, Verbindungen, aktive Geräte, 5-Minuten-Verlauf, Dienste-Verteilung
 - **Filter** für die ganze Ansicht: Verkehr *Internet / Intern / Alle*, Netz *LAN / WLAN 2,4 GHz / WLAN 5 GHz / Gast*, einzelnes Gerät, Suche
+- **Probleme erkennen**: nicht aufgelöste DNS-Namen (NXDOMAIN, SERVFAIL, keine Antwort) und
+  fehlgeschlagene Verbindungen (keine Antwort, abgelehnt, nicht erreichbar) – mit Filter „Fehler“
+- **Kacheln ein-/ausblenden** über das Ansicht-Menü (ausgeblendete Kacheln kosten keine Rechenzeit)
 - **Sortierung pro Ansicht**: nach Aktivität oder ruhig/statisch (Fest, Volumen, A–Z)
 - **Name, Modell und FRITZ!OS-Version** der Box werden angezeigt
 - Dark Mode (Standard) und Light Mode

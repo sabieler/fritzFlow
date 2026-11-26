@@ -3,6 +3,7 @@ package flow
 import (
 	"math/rand"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,4 +136,52 @@ func FuzzDecode(f *testing.F) {
 		_ = parseSNI(b)
 		_ = parseHTTPHost(b)
 	})
+}
+
+func TestFailureDetection(t *testing.T) {
+	tr := New(Options{})
+	now := time.Now()
+	syn := func(dport uint16) {
+		tr.Handle(pkt(pktgen.Frame(router, phone, ip, remote, 6, pktgen.TCP(50001+dport, dport, pktgen.SYN, nil), 20), 0))
+	}
+	// 1) refused: SYN answered by RST
+	syn(81)
+	tr.Handle(pkt(pktgen.Frame(phone, router, remote, ip, 6, pktgen.TCP(81, 50082, pktgen.RST|pktgen.ACK, nil), 20), 0))
+	// 2) timeout: SYN without any answer
+	syn(82)
+	// 3) established normally
+	syn(443)
+	tr.Handle(pkt(pktgen.Frame(phone, router, remote, ip, 6, pktgen.TCP(443, 50444, pktgen.SYN|pktgen.ACK, nil), 20), 0))
+	// 4) DNS: NXDOMAIN and an unanswered query
+	q := func(id uint16, name string) []byte {
+		b := pktgen.DNSResponse(id, name, "", remote)
+		b[2], b[3] = 0x01, 0x00 // turn into a query
+		return b
+	}
+	nx := pktgen.DNSResponse(7, "gibtsnicht.example", "", remote)
+	nx[3] = 0x83 // rcode 3
+	tr.Handle(pkt(pktgen.Frame(router, phone, ip, gw, 17, pktgen.UDP(40000, 53, q(7, "gibtsnicht.example")), 0), 0))
+	tr.Handle(pkt(pktgen.Frame(phone, router, gw, ip, 17, pktgen.UDP(53, 40000, nx), 0), 0))
+	tr.Handle(pkt(pktgen.Frame(router, phone, ip, gw, 17, pktgen.UDP(40001, 53, q(8, "langsam.example")), 0), 0))
+
+	s := tr.Snapshot(now.Add(6*time.Second), 100)
+	got := map[uint16]string{}
+	for _, c := range s.Conns {
+		if c.Kind == "wan" {
+			got[c.RPort] = c.Fail
+		}
+	}
+	if got[81] != "refused" || got[82] != "timeout" || got[443] != "" {
+		t.Fatalf("failures: %v", got)
+	}
+	if s.Totals.Failed != 2 {
+		t.Fatalf("failed total %d", s.Totals.Failed)
+	}
+	reasons := map[string]string{}
+	for _, d := range s.DNS {
+		reasons[d.Name] = d.Reason
+	}
+	if !strings.Contains(reasons["gibtsnicht.example"], "NXDOMAIN") || !strings.Contains(reasons["langsam.example"], "Keine Antwort") {
+		t.Fatalf("dns failures: %v", reasons)
+	}
 }

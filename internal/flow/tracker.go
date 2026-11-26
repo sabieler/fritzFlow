@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,6 +76,23 @@ type conn struct {
 	txRate, rxRate float64
 	finTx, finRx   bool
 	rst            bool
+	synOut         bool // we saw the local side open the connection
+	synAck         bool // the remote side answered the handshake
+	rstIn          bool // reset sent by the remote side
+	unreach        bool // ICMP destination unreachable for this flow
+}
+
+// failure classifies connections that never got established.
+func (c *conn) failure(now time.Time) string {
+	switch {
+	case c.unreach:
+		return "unreachable"
+	case c.key.proto == protoTCP && c.synOut && !c.synAck && c.rstIn:
+		return "refused"
+	case c.key.proto == protoTCP && c.synOut && !c.synAck && now.Sub(c.first) > 4*time.Second:
+		return "timeout"
+	}
+	return ""
 }
 
 func (c *conn) closed() bool { return c.rst || (c.finTx && c.finRx) }
@@ -92,6 +110,68 @@ type device struct {
 	ptx, prx       uint64
 	txRate, rxRate float64
 	conns          int
+}
+
+type dnsKey struct{ dev, name string }
+
+type dnsFail struct {
+	name, dev, reason string
+	count             int
+	first, last       time.Time
+}
+
+type dnsPendKey struct {
+	client netip.Addr
+	port   uint16
+	id     uint16
+}
+
+type dnsPend struct {
+	name, dev string
+	at        time.Time
+}
+
+const (
+	maxDNSFails   = 2000
+	maxDNSPending = 20000
+	dnsTimeout    = 5 * time.Second
+	dnsFailKeep   = 30 * time.Minute
+)
+
+func rcodeText(rc uint8) string {
+	switch rc {
+	case 2:
+		return "Serverfehler (SERVFAIL)"
+	case 3:
+		return "Name existiert nicht (NXDOMAIN)"
+	case 5:
+		return "Anfrage abgelehnt (REFUSED)"
+	}
+	return "DNS-Fehler (Code " + strconv.Itoa(int(rc)) + ")"
+}
+
+func (t *Tracker) recordDNSFail(name, dev, reason string, now time.Time) {
+	if name == "" || strings.HasSuffix(name, ".arpa") {
+		return
+	}
+	k := dnsKey{dev: dev, name: name}
+	f := t.dnsFails[k]
+	if f == nil {
+		if len(t.dnsFails) >= maxDNSFails {
+			return
+		}
+		f = &dnsFail{name: name, dev: dev, first: now}
+		t.dnsFails[k] = f
+	}
+	f.reason, f.last = reason, now
+	f.count++
+}
+
+func devKeyOf(m mac, hasMAC bool, ip netip.Addr) string {
+	if hasMAC {
+		return m.String()
+	}
+	return ip.String()
 }
 
 type nameEntry struct {
@@ -125,6 +205,9 @@ type Tracker struct {
 	rxRate, txRate float64
 	pps            float64
 
+	dnsFails   map[dnsKey]*dnsFail
+	dnsPending map[dnsPendKey]dnsPend
+
 	panics  atomic.Uint64
 	ptrQ    chan netip.Addr
 	ptrSeen map[netip.Addr]struct{}
@@ -150,6 +233,8 @@ func New(opt Options) *Tracker {
 		lastSweep:  now,
 		ptrQ:       make(chan netip.Addr, 512),
 		ptrSeen:    make(map[netip.Addr]struct{}),
+		dnsFails:   make(map[dnsKey]*dnsFail),
+		dnsPending: make(map[dnsPendKey]dnsPend),
 	}
 }
 
@@ -243,6 +328,25 @@ func (t *Tracker) Handle(pk pcap.Packet) {
 
 	// Name learning from DNS / mDNS responses (also for multicast).
 	if p.proto == protoUDP && len(p.payload) > 12 {
+		msg := p.payload
+		switch {
+		case p.dport == 53 && msg[2]&0x80 == 0: // query
+			if name, _, ok := readName(msg, 12); ok && len(t.dnsPending) < maxDNSPending {
+				t.dnsPending[dnsPendKey{p.src, p.sport, be16(msg)}] = dnsPend{name: name, dev: devKeyOf(p.srcMAC, p.hasMAC, p.src), at: now}
+			}
+		case p.sport == 53 && msg[2]&0x80 != 0: // response
+			pk := dnsPendKey{p.dst, p.dport, be16(msg)}
+			pend, had := t.dnsPending[pk]
+			delete(t.dnsPending, pk)
+			if rc := msg[3] & 0x0f; rc != 0 {
+				name, _, _ := readName(msg, 12)
+				dev := devKeyOf(p.dstMAC, p.hasMAC, p.dst)
+				if had {
+					name, dev = pend.name, pend.dev
+				}
+				t.recordDNSFail(name, dev, rcodeText(rc), now)
+			}
+		}
 		switch {
 		case p.sport == 53:
 			parseDNS(p.payload, func(qname, owner string, ip netip.Addr, _ uint32) {
@@ -267,6 +371,16 @@ func (t *Tracker) Handle(pk pcap.Packet) {
 
 	if p.dst.IsMulticast() || isBroadcast(p.dst) || (p.hasMAC && p.dstMAC[0]&1 == 1) {
 		return
+	}
+	if p.proto == protoICMP || p.proto == protoICMPv6 {
+		if k, _, ok := icmpUnreachable(p.proto, p.payload); ok {
+			if c := t.conns[k]; c != nil {
+				c.unreach = true
+			} else if c := t.conns[connKey{proto: k.proto, lip: k.rip, lport: k.rport, rip: k.lip, rport: k.lport}]; c != nil {
+				c.unreach = true
+			}
+			return // error messages are not connections of their own
+		}
 	}
 
 	var out bool
@@ -364,9 +478,20 @@ func (t *Tracker) Handle(pk pcap.Packet) {
 		f := p.tcpFlags
 		if f&tcpSYN != 0 && f&tcpACK == 0 && c.closed() {
 			c.finTx, c.finRx, c.rst = false, false, false // port reuse
+			c.synAck, c.rstIn, c.unreach = false, false, false
+			c.first = now
+		}
+		if f&tcpSYN != 0 && f&tcpACK == 0 && out {
+			c.synOut = true
+		}
+		if !out && f&tcpRST == 0 {
+			c.synAck = true // any reply from the remote side (not just SYN-ACK)
 		}
 		if f&tcpRST != 0 {
 			c.rst = true
+			if !out {
+				c.rstIn = true
+			}
 		}
 		if f&tcpFIN != 0 {
 			if out {
@@ -588,6 +713,8 @@ type Totals struct {
 	PPS      float64 `json:"pps"`
 	Packets  uint64  `json:"packets"`
 	Dropped  uint64  `json:"dropped"`
+	Failed   int     `json:"failed"`
+	DNSFail  int     `json:"dnsFail"`
 }
 
 // DeviceView is a device as shown in the UI.
@@ -627,18 +754,31 @@ type ConnView struct {
 	Age    float64 `json:"age"`
 	Idle   float64 `json:"idle"`
 	Closed bool    `json:"closed"`
+	Fail   string  `json:"fail,omitempty"` // timeout | refused | unreachable
+}
+
+// DNSFailView is a name that could not be resolved.
+type DNSFailView struct {
+	Name   string  `json:"name"`
+	Dev    string  `json:"dev"`
+	Reason string  `json:"reason"`
+	Count  int     `json:"count"`
+	Ago    float64 `json:"ago"`
 }
 
 // Snapshot is the complete state pushed to the UI.
 type Snapshot struct {
-	Time    int64        `json:"t"`
-	Totals  Totals       `json:"totals"`
-	Devices []DeviceView `json:"devices"`
-	Conns   []ConnView   `json:"conns"`
+	Time    int64         `json:"t"`
+	Totals  Totals        `json:"totals"`
+	Devices []DeviceView  `json:"devices"`
+	Conns   []ConnView    `json:"conns"`
+	DNS     []DNSFailView `json:"dnsFails"`
 }
 
-func timeoutFor(c *conn) time.Duration {
+func timeoutFor(c *conn, now time.Time) time.Duration {
 	switch {
+	case c.failure(now) != "":
+		return 2 * time.Minute
 	case c.closed():
 		return 10 * time.Second
 	case c.key.proto == protoTCP:
@@ -673,7 +813,7 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 	}
 	all := make([]*conn, 0, len(t.conns))
 	for k, c := range t.conns {
-		if now.Sub(c.last) > timeoutFor(c) {
+		if now.Sub(c.last) > timeoutFor(c, now) {
 			delete(t.conns, k)
 			continue
 		}
@@ -684,6 +824,9 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 		}
 		c.dev.conns++
 		s.Totals.Conns++
+		if c.failure(now) != "" {
+			s.Totals.Failed++
+		}
 		if c.kind == kindWAN {
 			s.Totals.ConnsWAN++
 		}
@@ -744,6 +887,10 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 	}
 
 	sort.Slice(all, func(i, j int) bool {
+		fa, fb := all[i].failure(now) != "", all[j].failure(now) != ""
+		if fa != fb {
+			return fa
+		}
 		ra, rb := all[i].rxRate+all[i].txRate, all[j].rxRate+all[j].txRate
 		if ra != rb {
 			return ra > rb
@@ -752,6 +899,24 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 	})
 	if topN > 0 && len(all) > topN {
 		all = all[:topN]
+	}
+	for k, pd := range t.dnsPending {
+		if now.Sub(pd.at) > dnsTimeout {
+			delete(t.dnsPending, k)
+			t.recordDNSFail(pd.name, pd.dev, "Keine Antwort vom DNS-Server", pd.at)
+		}
+	}
+	for k, f := range t.dnsFails {
+		if now.Sub(f.last) > dnsFailKeep {
+			delete(t.dnsFails, k)
+			continue
+		}
+		s.DNS = append(s.DNS, DNSFailView{Name: f.name, Dev: f.dev, Reason: f.reason, Count: f.count, Ago: now.Sub(f.last).Seconds()})
+	}
+	sort.Slice(s.DNS, func(i, j int) bool { return s.DNS[i].Ago < s.DNS[j].Ago })
+	s.Totals.DNSFail = len(s.DNS)
+	if len(s.DNS) > 100 {
+		s.DNS = s.DNS[:100]
 	}
 	s.Conns = make([]ConnView, 0, len(all))
 	for _, c := range all {
@@ -762,6 +927,7 @@ func (t *Tracker) Snapshot(now time.Time, topN int) *Snapshot {
 			Host: c.host, Svc: service(c.key.proto, c.key.lport, c.key.rport),
 			Kind: kindNames[c.kind], Rx: c.rx, Tx: c.tx, RxRate: c.rxRate, TxRate: c.txRate,
 			Age: now.Sub(c.first).Seconds(), Idle: now.Sub(c.last).Seconds(), Closed: c.closed(),
+			Fail: c.failure(now),
 		})
 	}
 	return s

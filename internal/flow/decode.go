@@ -203,5 +203,46 @@ func decodeL4(b []byte, p *packet) {
 		p.sport, p.dport = be16(b[0:]), be16(b[2:])
 		p.hasPorts = true
 		p.payload = b[8:]
+	case protoICMP, protoICMPv6:
+		p.payload = b // type, code, … (+ embedded original packet for errors)
 	}
+}
+
+// icmpUnreachable parses an ICMP "destination unreachable" message and
+// returns the 5-tuple of the original packet that could not be delivered.
+func icmpUnreachable(proto uint8, b []byte) (k connKey, code uint8, ok bool) {
+	if len(b) < 8 {
+		return k, 0, false
+	}
+	typ, code := b[0], b[1]
+	inner := b[8:]
+	switch {
+	case proto == protoICMP && typ == 3:
+		if len(inner) < 20 || inner[0]>>4 != 4 {
+			return k, 0, false
+		}
+		ihl := int(inner[0]&0x0f) * 4
+		if ihl < 20 || len(inner) < ihl+4 {
+			return k, 0, false
+		}
+		k.proto = inner[9]
+		k.lip = netip.AddrFrom4([4]byte(inner[12:16]))
+		k.rip = netip.AddrFrom4([4]byte(inner[16:20]))
+		k.lport, k.rport = be16(inner[ihl:]), be16(inner[ihl+2:])
+	case proto == protoICMPv6 && typ == 1:
+		if len(inner) < 44 || inner[0]>>4 != 6 {
+			return k, 0, false
+		}
+		k.proto = inner[6]
+		k.lip = netip.AddrFrom16([16]byte(inner[8:24]))
+		k.rip = netip.AddrFrom16([16]byte(inner[24:40]))
+		k.lport, k.rport = be16(inner[40:]), be16(inner[42:])
+	default:
+		return k, 0, false
+	}
+	if k.proto != protoTCP && k.proto != protoUDP {
+		return k, 0, false
+	}
+	k.lip, k.rip = k.lip.Unmap(), k.rip.Unmap()
+	return k, code, true
 }

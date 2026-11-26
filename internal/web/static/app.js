@@ -175,6 +175,44 @@ const S = {
   cfg: null,
 };
 
+/* ---------- tiles: hide / show ---------- */
+const hiddenTiles = new Set((store.get('ff-hidden', '') || '').split(',').filter(Boolean));
+const tileShown = (id) => !hiddenTiles.has(id);
+function applyTiles() {
+  document.querySelectorAll('[data-tile]').forEach((t) => t.classList.toggle('tile-hidden', hiddenTiles.has(t.dataset.tile)));
+  // containers: collapse empty columns, let the remaining tile use the space
+  const side = document.querySelector('.side');
+  const sideVisible = [...side.querySelectorAll('[data-tile]')].some((t) => tileShown(t.dataset.tile));
+  side.classList.toggle('tile-hidden', !sideVisible);
+  for (const sec of document.querySelectorAll('.grid-main, .grid-2')) {
+    const kids = [...sec.children].filter((k) => !k.classList.contains('tile-hidden'));
+    sec.classList.toggle('single', kids.length < 2);
+    sec.classList.toggle('tile-hidden', kids.length === 0);
+  }
+  const kpis = document.querySelector('.kpis');
+  kpis.classList.toggle('tile-hidden', ![...kpis.children].some((k) => !k.classList.contains('tile-hidden')));
+  store.set('ff-hidden', [...hiddenTiles].join(','));
+  $('#viewList').innerHTML = [...document.querySelectorAll('[data-tile]')].map((t) =>
+    `<label><input type="checkbox" data-t="${t.dataset.tile}" ${tileShown(t.dataset.tile) ? 'checked' : ''}> ${esc(t.dataset.title)}</label>`).join('');
+  $('#viewBtn').classList.toggle('has-hidden', hiddenTiles.size > 0);
+  window.dispatchEvent(new Event('resize')); // canvases re-measure
+}
+function setTile(id, show) {
+  if (show) hiddenTiles.delete(id); else hiddenTiles.add(id);
+  applyTiles();
+}
+document.addEventListener('click', (e) => {
+  const x = e.target.closest('.tile-x');
+  if (x) { setTile(x.closest('[data-tile]').dataset.tile, false); return; }
+  const pop = $('#viewPop');
+  if (e.target.closest('#viewBtn')) { pop.hidden = !pop.hidden; return; }
+  if (!pop.hidden && !e.target.closest('#viewPop')) pop.hidden = true;
+});
+$('#viewList').addEventListener('change', (e) => { const c = e.target.closest('input[data-t]'); if (c) setTile(c.dataset.t, c.checked); });
+$('#viewAll').addEventListener('click', () => { hiddenTiles.clear(); applyTiles(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#viewPop').hidden = true; });
+applyTiles();
+
 /* ---------- per-view ordering ---------- */
 function syncSegs() {
   document.querySelectorAll('.mini-seg').forEach((g) => g.querySelectorAll('button').forEach((b) =>
@@ -668,15 +706,17 @@ function matchesQuery(c) {
   const di = destInfo(c);
   return (devName(c.dev) + ' ' + c.host + ' ' + c.rip + ' ' + c.lip + ' ' + c.svc + ' ' + c.proto + ' ' + di.label + ' ' + c.rport).toLowerCase().includes(q);
 }
+const FAIL_TEXT = { timeout: 'Keine Antwort', refused: 'Abgelehnt', unreachable: 'Nicht erreichbar' };
 function kindOK(c) {
   const k = S.filter.kind;
+  if (k === 'fail') return !!c.fail;
   return k === 'all' || (k === 'wan' ? c.kind === 'wan' : c.kind !== 'wan');
 }
 function netOK(devId) {
   return !S.filter.net || (S.devs.get(devId)?.net || '') === S.filter.net;
 }
 function visibleConns(conns, forFlow) {
-  return conns.filter((c) => kindOK(c) && netOK(c.dev) && (!S.filter.dev || c.dev === S.filter.dev) && (!forFlow || !c.closed) && matchesQuery(c));
+  return conns.filter((c) => kindOK(c) && netOK(c.dev) && (!S.filter.dev || c.dev === S.filter.dev) && (!forFlow || !c.closed || c.fail) && matchesQuery(c));
 }
 const NET_ORDER = ['LAN', 'WLAN 2,4 GHz', 'WLAN 5 GHz', 'WLAN 6 GHz', 'WLAN', 'Gast'];
 let netKey = '';
@@ -694,7 +734,9 @@ function renderFilterBar(s) {
   $('#netPills').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.filter.net));
   $('#kindPills').querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === S.filter.kind));
   const parts = [];
-  if (S.filter.kind !== 'all') parts.push(S.filter.kind === 'wan' ? 'nur Internet' : 'nur intern');
+  if (S.filter.kind !== 'all') parts.push({ wan: 'nur Internet', int: 'nur intern', fail: 'nur Fehler' }[S.filter.kind]);
+  const nf = s.totals.failed || 0;
+  $('#failCount').textContent = nf ? ' ' + nf : '';
   if (S.filter.net) parts.push('nur ' + S.filter.net);
   if (S.filter.dev) parts.push('nur ' + devName(S.filter.dev));
   $('#filterInfo').textContent = parts.length ? 'Gefiltert: ' + parts.join(', ') : '';
@@ -726,7 +768,8 @@ function renderKpis(s) {
   const tot = Math.max(1, t.tcp + t.udp);
   const segs = $('#connSplit').children;
   segs[0].style.width = (t.tcp / tot) * 100 + '%'; segs[1].style.width = (t.udp / tot) * 100 + '%';
-  $('#connFoot').innerHTML = `<span style="color:#10b981">●</span> TCP ${t.tcp} &nbsp; <span style="color:#f59e0b">●</span> UDP ${t.udp} &nbsp;·&nbsp; ${t.conns} gesamt inkl. Heimnetz`;
+  $('#connFoot').innerHTML = `<span style="color:#10b981">●</span> TCP ${t.tcp} &nbsp; <span style="color:#f59e0b">●</span> UDP ${t.udp} &nbsp;·&nbsp; ${t.conns} gesamt` +
+    (t.failed || t.dnsFail ? ` &nbsp;·&nbsp; <span style="color:var(--err);font-weight:600">⚠ ${t.failed} fehlgeschl., ${t.dnsFail} DNS</span>` : '');
   tweenNum($('#devVal'), t.active, (v) => nf0.format(v));
   $('#devFoot').textContent = t.online + ' online im Heimnetz';
   const top = s.devices.filter((d) => d.rxRate + d.txRate > 0).slice(0, 7);
@@ -799,6 +842,45 @@ function renderDevices(s) {
   $('#devCount').textContent = S.filter.net ? `${list.length} in ${S.filter.net}` : `${s.totals.active} aktiv · ${list.length} bekannt`;
 }
 
+function ago(sec) {
+  sec = Math.max(0, sec | 0);
+  if (sec < 60) return 'vor ' + sec + ' s';
+  if (sec < 3600) return 'vor ' + Math.floor(sec / 60) + ' min';
+  return 'vor ' + Math.floor(sec / 3600) + ' h';
+}
+function renderProblems(s) {
+  const devOK = (id) => netOK(id) && (!S.filter.dev || id === S.filter.dev);
+  const q = S.filter.q;
+  const dns = (s.dnsFails || []).filter((d) => devOK(d.dev) && (!q || (d.name + ' ' + devName(d.dev)).toLowerCase().includes(q)));
+  $('#dnsFails').innerHTML = dns.length ? dns.slice(0, 60).map((d) => `
+    <li data-q="${esc(d.name)}" title="${esc(d.reason)}"><span class="pi ${/Keine Antwort/.test(d.reason) ? 'w' : ''}">?</span>
+      <div><b>${esc(d.name)}</b><small>${esc(devName(d.dev))} · ${esc(d.reason)}</small></div>
+      <div class="cnt">${d.count}×<small>${ago(d.ago)}</small></div></li>`).join('')
+    : '<li class="ok">✓ Alle DNS-Anfragen wurden beantwortet</li>';
+  const groups = new Map();
+  for (const c of s.conns) {
+    if (!c.fail || !devOK(c.dev)) continue;
+    const k = c.dev + '|' + (c.host || c.rip) + '|' + c.rport + '|' + c.fail;
+    let g = groups.get(k);
+    if (!g) { g = { c, n: 0, idle: c.idle }; groups.set(k, g); }
+    g.n++; g.idle = Math.min(g.idle, c.idle);
+  }
+  const list = [...groups.values()].filter((g) => !q || (devName(g.c.dev) + ' ' + g.c.host + ' ' + g.c.rip).toLowerCase().includes(q))
+    .sort((a, b) => a.idle - b.idle);
+  $('#connFails').innerHTML = list.length ? list.slice(0, 60).map((g) => `
+    <li data-q="${esc(g.c.host || g.c.rip)}"><span class="pi ${g.c.fail === 'timeout' ? 'w' : ''}">!</span>
+      <div><b>${esc(g.c.host || g.c.rip)}<span class="muted"> :${g.c.rport}</span></b><small>${esc(devName(g.c.dev))} · ${FAIL_TEXT[g.c.fail]} · ${g.c.proto}</small></div>
+      <div class="cnt">${g.n}×<small>${ago(g.idle)}</small></div></li>`).join('')
+    : '<li class="ok">✓ Keine fehlgeschlagenen Verbindungen</li>';
+  $('#probInfo').textContent = dns.length || list.length ? `${dns.length} DNS · ${list.length} Verbindungen` : 'alles in Ordnung';
+}
+for (const id of ['#dnsFails', '#connFails']) {
+  $(id).addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-q]'); if (!li) return;
+    $('#search').value = li.dataset.q; S.filter.q = li.dataset.q.toLowerCase(); render();
+  });
+}
+
 const rowEls = new Map();
 let firstTable = true;
 function sortVal(c, k) {
@@ -841,12 +923,20 @@ function renderTable(conns) {
       td[1].querySelector('small').textContent = (di.label !== (c.host || c.rip) ? di.label + ' · ' : '') + hostPort(c.rip, c.rport);
       td[2].innerHTML = `<span class="svc" style="border-color:${withAlpha(svcColor(c.svc), 0.45)}">${esc(c.svc)}<small>${c.proto}</small></span>`;
       tr.dataset.hk = hk;
+      tr.dataset.fk = '';
     }
     td[3].textContent = c.rxRate >= 1 ? fmtRate(c.rxRate) : '–'; td[3].className = 'r ' + (c.rxRate >= 1 ? 'rd' : 'z');
     td[4].textContent = c.txRate >= 1 ? fmtRate(c.txRate) : '–'; td[4].className = 'r ' + (c.txRate >= 1 ? 'ru' : 'z');
     td[5].textContent = fmtBytes(c.rx + c.tx);
     td[6].textContent = fmtDur(c.age);
-    tr.classList.toggle('closed', c.closed);
+    tr.classList.toggle('closed', c.closed && !c.fail);
+    tr.classList.toggle('failed', !!c.fail);
+    const fk = c.fail || '';
+    if (tr.dataset.fk !== fk) {
+      td[2].querySelector('.failtag')?.remove();
+      if (fk) td[2].insertAdjacentHTML('beforeend', `<span class="failtag">⚠ ${FAIL_TEXT[fk] || fk}</span>`);
+      tr.dataset.fk = fk;
+    }
     if (tb.children[i] !== tr) tb.insertBefore(tr, tb.children[i] || null);
   });
   for (const [id, tr] of rowEls) if (!seen.has(id)) { tr.remove(); rowEls.delete(id); }
@@ -911,17 +1001,18 @@ function render() {
   if (S.filter.dev) chip.textContent = devName(S.filter.dev);
   renderFilterBar(s);
   flowModel(s);
-  renderTopDest(conns.filter((c) => !c.closed));
-  drawDonut(conns);
-  renderDevices(s);
-  renderTable(conns);
+  if (tileShown('dest')) renderTopDest(conns.filter((c) => !c.closed));
+  if (tileShown('svc')) drawDonut(conns);
+  if (tileShown('devices')) renderDevices(s);
+  if (tileShown('conns')) renderTable(conns);
+  if (tileShown('problems')) renderProblems(s);
 }
 
 function drawAllStatic() {
-  drawSpark($('#sparkDown'), 'rx', css.down2);
-  drawSpark($('#sparkUp'), 'tx', css.up2);
-  drawHistory();
-  if (S.snap) drawDonut(visibleConns(S.snap.conns, false));
+  if (tileShown('kpi-down')) drawSpark($('#sparkDown'), 'rx', css.down2);
+  if (tileShown('kpi-up')) drawSpark($('#sparkUp'), 'tx', css.up2);
+  if (tileShown('history')) drawHistory();
+  if (S.snap && tileShown('svc')) drawDonut(visibleConns(S.snap.conns, false));
 }
 
 function onSnapshot(s) {
@@ -986,7 +1077,7 @@ function frame(now) {
   const dt = Math.min(0.1, (now - prevT) / 1000); prevT = now;
   if (!document.hidden) {
     stepTweens(dt);
-    try { drawFlow(now); } catch (e) { console.error(e); }
+    if (tileShown('flow')) { try { drawFlow(now); } catch (e) { console.error(e); } }
   }
   requestAnimationFrame(frame);
 }

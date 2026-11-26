@@ -25,6 +25,16 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4"/></svg>
     <input id="search" type="search" placeholder="Suchen: Gerät, Ziel, IP, Dienst …" autocomplete="off" spellcheck="false">
   </label>
+  <div class="view-menu">
+    <button id="viewBtn" class="icon-btn" title="Ansicht: Kacheln ein-/ausblenden" aria-label="Ansicht anpassen" aria-haspopup="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
+    </button>
+    <div id="viewPop" class="popover" hidden>
+      <div class="pop-head">Kacheln anzeigen</div>
+      <div id="viewList"></div>
+      <button type="button" id="viewAll" class="btn">Alle einblenden</button>
+    </div>
+  </div>
   <button id="themeBtn" class="icon-btn" title="Hell / Dunkel" aria-label="Farbschema wechseln">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
   </button>
@@ -40,25 +50,25 @@
 
 <main>
   <section class="kpis">
-    <article class="card kpi">
+    <article class="card kpi" data-tile="kpi-down" data-title="Download"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <div class="kpi-head"><span class="kpi-icon down">↓</span>Download</div>
       <div class="kpi-value"><span class="num" id="downVal">0</span><span class="unit" id="downUnit">Mbit/s</span></div>
       <canvas class="spark" id="sparkDown"></canvas>
       <div class="kpi-foot" id="downFoot">–</div>
     </article>
-    <article class="card kpi">
+    <article class="card kpi" data-tile="kpi-up" data-title="Upload"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <div class="kpi-head"><span class="kpi-icon up">↑</span>Upload</div>
       <div class="kpi-value"><span class="num" id="upVal">0</span><span class="unit" id="upUnit">Mbit/s</span></div>
       <canvas class="spark" id="sparkUp"></canvas>
       <div class="kpi-foot" id="upFoot">–</div>
     </article>
-    <article class="card kpi">
+    <article class="card kpi" data-tile="kpi-conn" data-title="Verbindungen"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <div class="kpi-head"><span class="kpi-icon conn">⇄</span>Verbindungen</div>
       <div class="kpi-value"><span class="num" id="connVal">0</span><span class="unit">aktiv</span></div>
       <div class="split" id="connSplit"><span class="seg tcp"></span><span class="seg udp"></span></div>
       <div class="kpi-foot" id="connFoot">–</div>
     </article>
-    <article class="card kpi">
+    <article class="card kpi" data-tile="kpi-dev" data-title="Geräte"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <div class="kpi-head"><span class="kpi-icon dev">◉</span>Geräte</div>
       <div class="kpi-value"><span class="num" id="devVal">0</span><span class="unit" id="devUnit">aktiv</span></div>
       <div class="avatars" id="devAvatars"></div>
@@ -66,12 +76,13 @@
     </article>
   </section>
 
-  <section class="card toolbar" aria-label="Filter">
+  <section class="card toolbar" aria-label="Filter" data-tile="filter" data-title="Filterleiste">
     <div class="tb-group"><span class="tb-label">Verkehr</span>
       <div class="pills" id="kindPills" role="group">
         <button type="button" data-v="wan" title="Verbindungen ins Internet">Internet</button>
         <button type="button" data-v="int" title="Verkehr im Heimnetz und zur FRITZ!Box">Intern</button>
         <button type="button" data-v="all">Alle</button>
+        <button type="button" data-v="fail" class="warnpill" title="Nur fehlgeschlagene Verbindungen">⚠ Fehler<small id="failCount"></small></button>
       </div>
     </div>
     <div class="tb-group"><span class="tb-label">Netz</span>
@@ -80,11 +91,12 @@
     <button id="devChip" class="chip" hidden></button>
     <span class="spacer"></span>
     <span class="muted" id="filterInfo"></span>
+    <button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
   </section>
 
   <section class="grid-main">
-    <article class="card flow-card">
-      <div class="card-head">
+    <article class="card flow-card" data-tile="flow" data-title="Live-Verkehr">
+      <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
         <h2>Live-Verkehr</h2>
         <div class="mini-seg" data-view="flow" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Fest</button></div>
         <div class="legend"><span class="lg down"></span>Download<span class="lg up"></span>Upload</div>
@@ -99,12 +111,12 @@
       </div>
     </article>
     <div class="side">
-      <article class="card">
-        <div class="card-head"><h2>Top-Ziele</h2><div class="mini-seg" data-view="dest" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Volumen</button></div></div>
+      <article class="card" data-tile="dest" data-title="Top-Ziele">
+        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Top-Ziele</h2><div class="mini-seg" data-view="dest" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Volumen</button></div></div>
         <ol id="topDest" class="rank"></ol>
       </article>
-      <article class="card">
-        <div class="card-head"><h2>Dienste</h2></div>
+      <article class="card" data-tile="svc" data-title="Dienste">
+        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Dienste</h2></div>
         <div class="donut-wrap">
           <canvas id="donut"></canvas>
           <ul id="svcLegend" class="svc-legend"></ul>
@@ -114,21 +126,35 @@
   </section>
 
   <section class="grid-2">
-    <article class="card">
-      <div class="card-head"><h2>Durchsatz</h2><span class="muted">letzte 5 Minuten</span></div>
+    <article class="card" data-tile="history" data-title="Durchsatz">
+      <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Durchsatz</h2><span class="muted">letzte 5 Minuten</span></div>
       <div class="chart-wrap" id="histWrap">
         <canvas id="history"></canvas>
         <div id="histTip" class="tooltip" hidden></div>
       </div>
     </article>
-    <article class="card">
-      <div class="card-head"><h2>Geräte</h2><div class="mini-seg" data-view="dev" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">A–Z</button></div><span class="muted" id="devCount"></span></div>
+    <article class="card" data-tile="devices" data-title="Geräte-Liste">
+      <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Geräte</h2><div class="mini-seg" data-view="dev" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">A–Z</button></div><span class="muted" id="devCount"></span></div>
       <ul id="devices" class="devices"></ul>
     </article>
   </section>
 
-  <section class="card">
-    <div class="card-head wrap">
+  <section class="card" data-tile="problems" data-title="Probleme">
+    <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Probleme</h2><span class="muted" id="probInfo"></span></div>
+    <div class="prob-grid">
+      <div>
+        <h3>DNS – nicht aufgelöste Namen</h3>
+        <ul id="dnsFails" class="plist"></ul>
+      </div>
+      <div>
+        <h3>Fehlgeschlagene Verbindungen</h3>
+        <ul id="connFails" class="plist"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" data-tile="conns" data-title="Verbindungstabelle">
+    <div class="card-head wrap"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
       <h2>Verbindungen</h2>
       <div class="filters">
         <span class="muted" id="connCount"></span>

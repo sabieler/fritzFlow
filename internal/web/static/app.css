@@ -157,6 +157,50 @@ button, input, select { font: inherit; color: inherit; }
 .mini-seg button:hover { color: var(--text); }
 .mini-seg button.on { background: var(--card-hover); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
 
+[data-tile] { position: relative; }
+.tile-x {
+  order: 99; margin-left: 6px; width: 22px; height: 22px; border-radius: 6px; border: 0; padding: 0;
+  background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .2s, background .2s;
+}
+.kpi > .tile-x { position: absolute; top: 10px; right: 10px; }
+[data-tile]:hover .tile-x, .tile-x:focus-visible { opacity: 1; }
+.tile-x:hover { background: var(--pill); color: var(--text); }
+@media (hover: none) { .tile-x { opacity: .6; } }
+.view-menu { position: relative; }
+.popover {
+  position: absolute; right: 0; top: 44px; z-index: 30; width: 250px; padding: 12px;
+  background: var(--card-solid); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow);
+  display: grid; gap: 4px; animation: fadeIn .2s ease;
+}
+.pop-head { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+.popover label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.popover label:hover { background: var(--pill); }
+.popover input { accent-color: var(--down); width: 15px; height: 15px; }
+.popover .btn { margin-top: 6px; height: 32px; }
+.tile-hidden { display: none !important; }
+.grid-main.single, .grid-2.single { grid-template-columns: minmax(0, 1fr); }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important; }
+
+.pills button.warnpill.on { background: linear-gradient(135deg, #ff5b6e, #ff9a3d); }
+.pills button.warnpill small { color: var(--err); font-weight: 700; }
+.pills button.warnpill.on small { color: #fff; }
+.prob-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.prob-grid h3 { margin: 0 0 8px; font-size: 12px; font-weight: 650; color: var(--text2); }
+.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; scrollbar-width: thin; }
+.plist li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 10px; cursor: pointer; }
+.plist li:hover { background: var(--pill); }
+.plist .pi { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: var(--err); }
+.plist .pi.w { background: var(--warn); }
+.plist b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plist small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plist .cnt { font-size: 12px; font-weight: 700; color: var(--text2); text-align: right; white-space: nowrap; }
+.plist .cnt small { font-weight: 500; }
+.plist .ok { color: var(--ok); font-size: 13px; padding: 8px; cursor: default; display: block; }
+tbody tr.failed { background: color-mix(in srgb, var(--err) 7%, transparent); }
+tbody tr.failed:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.failtag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+@media (max-width: 760px) { .prob-grid { grid-template-columns: 1fr; } }
+
 /* ---------- layout ---------- */
 main { position: relative; z-index: 1; padding: 18px 24px 28px; display: grid; gap: 18px; max-width: 1680px; margin: 0 auto; }
 .card {
