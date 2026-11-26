@@ -1,0 +1,223 @@
+// Package fakebox simulates the parts of a FRITZ!Box that FritzFlow uses:
+// login_sid.lua (PBKDF2), the capture stream and the TR-064 host list.
+// It powers the -demo mode and the integration tests.
+package fakebox
+
+import (
+	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"html"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sabieler/fritzFlow/internal/fritz"
+	"github.com/sabieler/fritzFlow/internal/pktgen"
+)
+
+// Box is a running simulator.
+type Box struct {
+	URL      string
+	User     string
+	Password string
+
+	srv       *http.Server
+	mu        sync.Mutex
+	sids      map[string]bool
+	challenge string
+	nonce     string
+	sim       *simulation
+	ctx       context.Context
+	cancel    context.CancelFunc
+}
+
+func randHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// Start launches the simulator on a random localhost port.
+func Start(user, password string) (*Box, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b := &Box{
+		URL:       "http://" + ln.Addr().String(),
+		User:      user,
+		Password:  password,
+		sids:      map[string]bool{},
+		challenge: fmt.Sprintf("2$%d$%s$%d$%s", 1000, randHex(16), 100, randHex(16)),
+		nonce:     randHex(8),
+		sim:       newSimulation(),
+		ctx:       ctx,
+		cancel:    cancel,
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/login_sid.lua", b.login)
+	mux.HandleFunc("/cgi-bin/capture_notimeout", b.capture)
+	mux.HandleFunc("/upnp/control/hosts", b.hosts)
+	mux.HandleFunc("/devicehostlist.lua", b.hostList)
+	b.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = b.srv.Serve(ln) }()
+	return b, nil
+}
+
+// Close stops the simulator.
+func (b *Box) Close() {
+	b.cancel()
+	c, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = b.srv.Shutdown(c)
+}
+
+func (b *Box) validSID(sid string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.sids[sid]
+}
+
+func (b *Box) login(w http.ResponseWriter, r *http.Request) {
+	_ = r.ParseForm()
+	sid := "0000000000000000"
+	if s := r.Form.Get("sid"); s != "" && b.validSID(s) {
+		if r.Form.Get("logout") != "" {
+			b.mu.Lock()
+			delete(b.sids, s)
+			b.mu.Unlock()
+		} else {
+			sid = s
+		}
+	}
+	if r.Method == http.MethodPost {
+		want, _ := fritz.SolveChallenge(b.challenge, b.Password)
+		if r.Form.Get("username") == b.User && r.Form.Get("response") == want {
+			sid = randHex(8)
+			b.mu.Lock()
+			b.sids[sid] = true
+			b.mu.Unlock()
+		}
+	}
+	w.Header().Set("Content-Type", "text/xml")
+	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?><SessionInfo><SID>%s</SID><Challenge>%s</Challenge>`+
+		`<BlockTime>0</BlockTime><Rights></Rights><Users><User last="1">%s</User></Users></SessionInfo>`,
+		sid, b.challenge, html.EscapeString(b.User))
+}
+
+func (b *Box) capture(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if !b.validSID(q.Get("sid")) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if q.Get("capture") != "Start" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	snap, _ := strconv.Atoi(q.Get("snaplen"))
+	if snap <= 0 {
+		snap = 1600
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	fl, _ := w.(http.Flusher)
+	pw, err := pktgen.NewWriter(w, snap)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	go func() {
+		select {
+		case <-b.ctx.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	b.sim.run(ctx, pw, func() {
+		if fl != nil {
+			fl.Flush()
+		}
+	})
+}
+
+func (b *Box) checkDigest(r *http.Request) bool {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Digest ") {
+		return false
+	}
+	f := map[string]string{}
+	for _, part := range strings.Split(h[7:], ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 {
+			f[kv[0]] = strings.Trim(kv[1], `"`)
+		}
+	}
+	md := func(s string) string { x := md5.Sum([]byte(s)); return hex.EncodeToString(x[:]) }
+	ha1 := md(b.User + ":F!Box SOAP-Auth:" + b.Password)
+	ha2 := md(r.Method + ":" + f["uri"])
+	want := md(ha1 + ":" + b.nonce + ":" + f["nc"] + ":" + f["cnonce"] + ":" + f["qop"] + ":" + ha2)
+	return f["username"] == b.User && f["nonce"] == b.nonce && f["response"] == want
+}
+
+func (b *Box) hosts(w http.ResponseWriter, r *http.Request) {
+	if !b.checkDigest(r) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Digest realm="F!Box SOAP-Auth", nonce="%s", algorithm=MD5, qop="auth"`, b.nonce))
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	action := r.Header.Get("SOAPAction")
+	if i := strings.IndexByte(action, '#'); i >= 0 {
+		action = strings.Trim(action[i+1:], `"`)
+	}
+	var inner string
+	switch action {
+	case "X_AVM-DE_GetHostListPath":
+		sid := randHex(8)
+		b.mu.Lock()
+		b.sids[sid] = true
+		b.mu.Unlock()
+		inner = "<NewX_AVM-DE_HostListPath>/devicehostlist.lua?sid=" + sid + "</NewX_AVM-DE_HostListPath>"
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprint(w, `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><detail><UPnPError><errorCode>401</errorCode><errorDescription>Invalid Action</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`)
+		return
+	}
+	w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+	fmt.Fprintf(w, `<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>`+
+		`<u:%sResponse xmlns:u="urn:dslforum-org:service:Hosts:1">%s</u:%sResponse></s:Body></s:Envelope>`, action, inner, action)
+}
+
+func (b *Box) hostList(w http.ResponseWriter, r *http.Request) {
+	if !b.validSID(r.URL.Query().Get("sid")) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/xml")
+	var sb strings.Builder
+	sb.WriteString(`<?xml version="1.0"?><List>`)
+	write := func(i int, ip, mac, name, iface string, active int) {
+		fmt.Fprintf(&sb, "<Item><Index>%d</Index><IPAddress>%s</IPAddress><MACAddress>%s</MACAddress><Active>%d</Active><HostName>%s</HostName><InterfaceType>%s</InterfaceType></Item>",
+			i, ip, strings.ToUpper(mac), active, html.EscapeString(name), iface)
+	}
+	for i, d := range b.sim.devs {
+		if d.anonymous {
+			continue
+		}
+		write(i+1, d.ip4.String(), macStr(d.mac), d.name, d.iface, 1)
+	}
+	write(99, "192.168.178.77", "3c:22:fb:00:00:77", "Gaeste-Laptop", "802.11", 0)
+	sb.WriteString(`</List>`)
+	fmt.Fprint(w, sb.String())
+}
+
+func macStr(m pktgen.MAC) string {
+	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3], m[4], m[5])
+}

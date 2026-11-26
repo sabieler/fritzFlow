@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>FritzFlow</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2330d5ff'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M6 20c4-8 8 4 12-4s6-2 8-4' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#30d5ff"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M6 20c4-8 8 4 12-4s6-2 8-4" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+    <span class="brand-name">Fritz<b>Flow</b></span>
+  </div>
+  <div id="status" class="status-pill" data-state="connecting" title="">
+    <span class="dot"></span><span id="statusText">Verbinde …</span>
+  </div>
+  <div class="spacer"></div>
+  <label class="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4"/></svg>
+    <input id="search" type="search" placeholder="Suchen: Gerät, Ziel, IP, Dienst …" autocomplete="off" spellcheck="false">
+  </label>
+  <button id="themeBtn" class="icon-btn" title="Hell / Dunkel" aria-label="Farbschema wechseln">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+  <button id="settingsBtn" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+  </button>
+</header>
+
+<div id="banners"></div>
+
+<main>
+  <section class="kpis">
+    <article class="card kpi">
+      <div class="kpi-head"><span class="kpi-icon down">↓</span>Download</div>
+      <div class="kpi-value"><span class="num" id="downVal">0</span><span class="unit" id="downUnit">Mbit/s</span></div>
+      <canvas class="spark" id="sparkDown"></canvas>
+      <div class="kpi-foot" id="downFoot">–</div>
+    </article>
+    <article class="card kpi">
+      <div class="kpi-head"><span class="kpi-icon up">↑</span>Upload</div>
+      <div class="kpi-value"><span class="num" id="upVal">0</span><span class="unit" id="upUnit">Mbit/s</span></div>
+      <canvas class="spark" id="sparkUp"></canvas>
+      <div class="kpi-foot" id="upFoot">–</div>
+    </article>
+    <article class="card kpi">
+      <div class="kpi-head"><span class="kpi-icon conn">⇄</span>Verbindungen</div>
+      <div class="kpi-value"><span class="num" id="connVal">0</span><span class="unit">aktiv</span></div>
+      <div class="split" id="connSplit"><span class="seg tcp"></span><span class="seg udp"></span></div>
+      <div class="kpi-foot" id="connFoot">–</div>
+    </article>
+    <article class="card kpi">
+      <div class="kpi-head"><span class="kpi-icon dev">◉</span>Geräte</div>
+      <div class="kpi-value"><span class="num" id="devVal">0</span><span class="unit" id="devUnit">aktiv</span></div>
+      <div class="avatars" id="devAvatars"></div>
+      <div class="kpi-foot" id="devFoot">–</div>
+    </article>
+  </section>
+
+  <section class="grid-main">
+    <article class="card flow-card">
+      <div class="card-head">
+        <h2>Live-Verkehr</h2>
+        <div class="legend"><span class="lg down"></span>Download<span class="lg up"></span>Upload</div>
+      </div>
+      <div class="flow-wrap" id="flowWrap">
+        <canvas id="flow"></canvas>
+        <div id="flowTip" class="tooltip" hidden></div>
+        <div id="flowEmpty" class="empty">
+          <div class="radar"><span></span><span></span><span></span></div>
+          <p id="flowEmptyText">Warte auf Daten von der FRITZ!Box …</p>
+        </div>
+      </div>
+    </article>
+    <div class="side">
+      <article class="card">
+        <div class="card-head"><h2>Top-Ziele</h2><span class="muted">nach Durchsatz</span></div>
+        <ol id="topDest" class="rank"></ol>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>Dienste</h2></div>
+        <div class="donut-wrap">
+          <canvas id="donut"></canvas>
+          <ul id="svcLegend" class="svc-legend"></ul>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <article class="card">
+      <div class="card-head"><h2>Durchsatz</h2><span class="muted">letzte 5 Minuten</span></div>
+      <div class="chart-wrap" id="histWrap">
+        <canvas id="history"></canvas>
+        <div id="histTip" class="tooltip" hidden></div>
+      </div>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Geräte</h2><span class="muted" id="devCount"></span></div>
+      <ul id="devices" class="devices"></ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="card-head wrap">
+      <h2>Verbindungen</h2>
+      <div class="filters">
+        <button id="devChip" class="chip" hidden></button>
+        <label class="toggle"><input type="checkbox" id="onlyWan" checked><span class="track"></span>Nur Internet</label>
+        <span class="muted" id="connCount"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="conns">
+        <thead><tr>
+          <th data-k="dev">Gerät</th>
+          <th data-k="host">Ziel</th>
+          <th data-k="svc">Dienst</th>
+          <th data-k="rxRate" class="r">↓ Rate</th>
+          <th data-k="txRate" class="r">↑ Rate</th>
+          <th data-k="total" class="r">Volumen</th>
+          <th data-k="age" class="r">Dauer</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="tableEmpty" class="table-empty" hidden>Keine passenden Verbindungen</div>
+    </div>
+  </section>
+
+  <footer id="footer" class="footer"></footer>
+</main>
+
+<dialog id="setup">
+  <form id="setupForm" method="dialog" autocomplete="off">
+    <div class="dlg-head">
+      <h2>FRITZ!Box verbinden</h2>
+      <p class="muted">Die Zugangsdaten bleiben auf diesem Rechner. Tipp: Lege in der FRITZ!Box unter <i>System → FRITZ!Box-Benutzer</i> einen eigenen Benutzer mit dem Recht <b>„FRITZ!Box Einstellungen“</b> an.</p>
+    </div>
+    <div id="roNote" class="note" hidden>Demo-Modus: Die Einstellungen sind schreibgeschützt.</div>
+    <label class="field"><span>Adresse</span><input name="fritzbox" placeholder="http://fritz.box" required></label>
+    <div class="row2">
+      <label class="field"><span>Benutzername</span><input name="username" placeholder="automatisch"></label>
+      <label class="field"><span>Passwort</span><input name="password" type="password" autocomplete="new-password"></label>
+    </div>
+    <label class="field"><span>Mitschnitt-Schnittstelle</span>
+      <select name="ifaceSel">
+        <option value="1-lan">LAN + WLAN – empfohlen (1-lan)</option>
+        <option value="2-1">Internet-Anschluss – ohne Gerätezuordnung (2-1)</option>
+        <option value="custom">Andere …</option>
+      </select>
+    </label>
+    <label class="field" id="ifaceCustomWrap" hidden><span>Schnittstellen-Kennung</span><input name="ifaceCustom" placeholder="z. B. 1-lan"></label>
+    <fieldset class="field"><legend>Detailgrad (Last auf der FRITZ!Box)</legend>
+      <div class="seg-ctl">
+        <label><input type="radio" name="snaplen" value="128"><span>Sparsam<small>128 B</small></span></label>
+        <label><input type="radio" name="snaplen" value="200"><span>Ausgewogen<small>200 B</small></span></label>
+        <label><input type="radio" name="snaplen" value="512"><span>Detailliert<small>512 B</small></span></label>
+      </div>
+      <small class="hint">So viele Bytes je Paket schickt die Box. Weniger bedeutet weniger Last, mehr bedeutet mehr erkannte Hostnamen. Paketinhalte werden nie ausgewertet.</small>
+    </fieldset>
+    <fieldset class="field"><legend>Mitschnitt aktiv</legend>
+      <label class="radio"><input type="radio" name="captureMode" value="on-demand"> Nur solange diese Ansicht geöffnet ist (empfohlen)</label>
+      <label class="radio"><input type="radio" name="captureMode" value="always"> Immer</label>
+    </fieldset>
+    <label class="radio"><input type="checkbox" name="reverseDns"> Unbekannte Ziel-IPs per Reverse-DNS benennen</label>
+    <div id="setupMsg" class="msg" hidden></div>
+    <div class="dlg-actions">
+      <button type="button" id="cancelBtn" class="btn ghost">Abbrechen</button>
+      <span class="spacer"></span>
+      <button type="button" id="testBtn" class="btn">Verbindung testen</button>
+      <button type="submit" id="saveBtn" class="btn primary">Speichern &amp; starten</button>
+    </div>
+    <p class="muted tiny" id="cfgPath"></p>
+  </form>
+</dialog>
+</body>
+</html>

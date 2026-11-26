@@ -1,0 +1,13 @@
+# build output
+/dist/
+/fritzflow
+*.exe
+
+# never commit credentials, local config or captures
+config.json
+*.json.tmp
+.env
+.env.*
+*.pcap
+*.pcapng
+*.cap
