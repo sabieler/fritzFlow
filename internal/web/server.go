@@ -39,6 +39,7 @@ func Handler(e *engine.Engine, allowRemote bool) http.Handler {
 	mux.HandleFunc("/api/config", s.config)
 	mux.HandleFunc("/api/test", s.test)
 	mux.HandleFunc("/api/browsers", s.browsers)
+	mux.HandleFunc("/api/pause", s.pause)
 	mux.HandleFunc("/api/browser-test", s.browserTest)
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -134,6 +135,7 @@ type configView struct {
 	Browser      string `json:"browser"`
 	OpenBrowser  bool   `json:"openBrowser"`
 	BoxStats     bool   `json:"boxStats"`
+	AutoPause    bool   `json:"autoPause"`
 	CaptureGuest bool   `json:"captureGuest"`
 	// ExitAfterMinutes: 0 = keep running after the last tab was closed.
 	ExitAfterMinutes int `json:"exitAfterMinutes"`
@@ -147,7 +149,7 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 			FritzBox: c.FritzBox, Username: c.Username, PasswordSet: c.Password != "",
 			Interface: c.Interface, Snaplen: c.Snaplen, CaptureMode: c.CaptureMode,
 			ReverseDNS: c.ReverseDNS, ReadOnly: s.e.ReadOnly(), Path: s.e.ConfigPath(),
-			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser, BoxStats: c.BoxStats,
+			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser, BoxStats: c.BoxStats, AutoPause: c.AutoPause,
 			ExitAfterMinutes: int(c.ExitAfter() / time.Minute), CaptureGuest: c.CaptureGuest,
 		})
 	case http.MethodPost:
@@ -174,7 +176,7 @@ func readConfig(w http.ResponseWriter, r *http.Request) (config.Config, bool) {
 	return config.Config{
 		FritzBox: v.FritzBox, Username: v.Username, Password: v.Password,
 		Interface: v.Interface, Snaplen: v.Snaplen, CaptureMode: v.CaptureMode, ReverseDNS: v.ReverseDNS,
-		Browser: v.Browser, OpenBrowser: v.OpenBrowser, BoxStats: v.BoxStats,
+		Browser: v.Browser, OpenBrowser: v.OpenBrowser, BoxStats: v.BoxStats, AutoPause: v.AutoPause,
 		ExitAfterMinutes: &v.ExitAfterMinutes, CaptureGuest: v.CaptureGuest,
 	}, true
 }
@@ -211,6 +213,23 @@ func (s *server) state(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) browsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"os": runtime.GOOS, "browsers": browser.Detect()})
+}
+
+// pause pauses or resumes the capture: {"paused": true|false}.
+func (s *server) pause(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var v struct {
+		Paused bool `json:"paused"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1024)).Decode(&v); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "message": "ungültige Anfrage"})
+		return
+	}
+	s.e.SetPaused(v.Paused)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *server) browserTest(w http.ResponseWriter, r *http.Request) {

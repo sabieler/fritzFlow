@@ -40,6 +40,14 @@ type Box struct {
 	orphans   map[string]bool // interfaces blocked by an orphaned capture → sticky
 	stopAlls  int
 	starts    map[string]int // capture starts per interface
+	wan       *[2]float64    // fixed online monitor rate (down, up bytes/s); nil = demo curve
+}
+
+// SetWANRate makes the online monitor report a constant rate in bytes/s.
+func (b *Box) SetWANRate(down, up float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.wan = &[2]float64{down, up}
 }
 
 // Starts reports how often a capture on iface was started.
@@ -132,6 +140,16 @@ func Start(user, password string) (*Box, error) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"rate_sumact":"31","rate_systemact":"65","rate_wlanact":"100","rate_dspact":"100","rate_usbhostact":"0"}`)
 	})
+	mux.HandleFunc("/api/v0/monitor/online/0", b.online)
+	mux.HandleFunc("/api/v0/generic/connections", func(w http.ResponseWriter, r *http.Request) {
+		if !b.validSID(strings.TrimPrefix(r.Header.Get("Authorization"), "AVM-SID ")) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"connection":[{"is_active_internet_connection":"1","max_speed_down":"250000","max_speed_up":"40000",`+
+			`"media_type":"dsl","ip4_connstatus":"connected","ip6_connstatus":"connected","ip4_uptime":"86400","ip6_uptime":"86400"}]}`)
+	})
 	mux.HandleFunc("/jason_boxinfo.xml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/xml")
 		fmt.Fprint(w, `<j:BoxInfo xmlns:j="http://jason.avm.de/updatecheck/"><j:Name>FRITZ!Box Demo</j:Name><j:Version>164.08.00</j:Version><j:Serial>DEMO</j:Serial><j:Lab></j:Lab></j:BoxInfo>`)
@@ -139,6 +157,40 @@ func Start(user, password string) (*Box, error) {
 	b.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = b.srv.Serve(ln) }()
 	return b, nil
+}
+
+// online serves the online monitor: 10 minutes in 5 s steps, newest last,
+// split into two categories like the real box.
+func (b *Box) online(w http.ResponseWriter, r *http.Request) {
+	if !b.validSID(strings.TrimPrefix(r.Header.Get("Authorization"), "AVM-SID ")) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	b.mu.Lock()
+	fixed := b.wan
+	b.mu.Unlock()
+	const n = 120
+	now := time.Now().Unix()
+	down, up := make([]float64, n), make([]float64, n)
+	for i := range down {
+		if fixed != nil {
+			down[i], up[i] = fixed[0], fixed[1]
+			continue
+		}
+		t := float64(now/5 - int64(n-1-i))
+		down[i] = 1.6e6 * (1 + 0.6*math.Sin(t*0.21)*math.Sin(t*0.047))
+		up[i] = 0.25e6 * (1 + 0.5*math.Sin(t*0.13))
+	}
+	half := func(v []float64) []float64 {
+		h := make([]float64, len(v))
+		for i := range v {
+			h[i] = v[i] / 2
+		}
+		return h
+	}
+	cat := map[string][]float64{"downstream": half(down), "upstream": half(up)}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"lastSampleTime": now, "categories": []any{cat, cat}})
 }
 
 // Close stops the simulator.

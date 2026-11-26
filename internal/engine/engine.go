@@ -29,6 +29,28 @@ const (
 	StateConnecting = "connecting"
 	StateLive       = "live"
 	StateError      = "error"
+	StatePaused     = "paused"
+)
+
+// Auto pause: while any capture runs, the FRITZ!Box forwards far slower (a
+// 7590 managed ~55 instead of 262 Mbit/s, independent of interface and
+// snaplen). FritzFlow therefore steps aside while the line is busy and
+// resumes once it is quiet again. Rates come from the online monitor, which
+// costs the box nothing.
+const (
+	autoPauseHigh    = 30e6 / 8         // bytes/s in either direction …
+	autoPauseSamples = 2                // … in this many 5 s samples in a row (10 s)
+	autoResumeLow    = 15e6 / 8         // average bytes/s per direction to resume …
+	autoResumeMax    = 8 * time.Minute  // quiet time after repeated pauses
+	autoRepauseWin   = 3 * time.Minute  // a pause this soon after resuming counts as repeated
+	autoHoldManual   = 10 * time.Minute // no auto pause after "resume now"
+	autoNoDataResume = 2 * time.Minute  // resume when the online monitor stays unreadable
+	sampleStep       = 5 * time.Second  // online monitor resolution
+)
+
+var (
+	autoResumeQuiet = time.Minute
+	onlinePoll      = 5 * time.Second // how often the online monitor is read
 )
 
 const (
@@ -81,6 +103,9 @@ type Status struct {
 	LoadInfo   string            `json:"loadInfo,omitempty"`
 	Fallback   string            `json:"fallback,omitempty"`  // set while capturing fallbackIface instead
 	GuestInfo  string            `json:"guestInfo,omitempty"` // why the guest network is not captured
+	Paused     string            `json:"paused,omitempty"`    // "auto" or "manual" while the capture is paused
+	AutoPause  bool              `json:"autoPause"`
+	PauseInfo  string            `json:"pauseInfo,omitempty"` // why auto pause cannot work
 }
 
 type message struct {
@@ -121,6 +146,16 @@ type Engine struct {
 	sid        atomic.Value // current session ID (string) while capturing
 	lostAt     atomic.Int64 // when the box last ended our capture (unix nano)
 
+	pauseMu     sync.Mutex
+	manualPause bool
+	autoPaused  bool
+	pausedAt    time.Time
+	pauseRate   float64   // bytes/s that triggered the auto pause
+	resumedAt   time.Time // last automatic resume
+	pauseStreak int       // auto pauses shortly after resuming, in a row
+	autoHold    time.Time // no auto pause before this
+	pauseKick   chan struct{}
+
 	pubMu  sync.Mutex
 	latest []byte
 	notify chan struct{}
@@ -138,6 +173,7 @@ func New(cfg config.Config, opt Options) *Engine {
 		wake:      make(chan struct{}, 1),
 		restart:   make(chan struct{}, 1),
 		hostsKick: make(chan struct{}, 1),
+		pauseKick: make(chan struct{}, 1),
 		notify:    make(chan struct{}),
 		tracker:   flow.New(flow.Options{ReverseDNS: cfg.ReverseDNS}),
 	}
@@ -446,6 +482,8 @@ func (e *Engine) tickLoop(ctx context.Context) {
 			st.Demo, st.ReadOnly, st.Version = e.opt.Demo, e.opt.ReadOnly, e.opt.Version
 			st.Viewers = e.viewers.Load()
 			st.BoxStats = cfg.BoxStats
+			st.AutoPause = cfg.AutoPause
+			st.Paused, _ = e.pauseState()
 			if !cfg.BoxStats {
 				st.Load, st.LoadInfo, st.WAN = nil, "", nil
 			}
@@ -488,6 +526,10 @@ func (e *Engine) captureLoop(ctx context.Context) {
 			if !e.waitFor(ctx, 2*time.Second) {
 				return
 			}
+			continue
+		}
+		if p, _ := e.pauseState(); p != "" {
+			e.pauseLoop(ctx)
 			continue
 		}
 		start := time.Now()
@@ -549,7 +591,7 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 				cancel()
 				return
 			case <-t.C:
-				if !e.wanted(cfg) {
+				if p, _ := e.pauseState(); !e.wanted(cfg) || p != "" {
 					cancel()
 					return
 				}
@@ -799,7 +841,7 @@ func (e *Engine) setBoxName(name string) {
 
 // loadLoop polls the box utilisation every 30 s while capturing.
 func (e *Engine) loadLoop(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
+	t := time.NewTicker(onlinePoll)
 	defer t.Stop()
 	var last time.Time
 	for {
@@ -810,7 +852,7 @@ func (e *Engine) loadLoop(ctx context.Context) {
 		}
 		cfg := e.Config()
 		sid, _ := e.sid.Load().(string)
-		if !cfg.BoxStats || sid == "" || e.state() != StateLive {
+		if !(cfg.BoxStats || cfg.AutoPause) || sid == "" || e.state() != StateLive {
 			continue
 		}
 		cl, err := e.clientFor(cfg)
@@ -818,13 +860,10 @@ func (e *Engine) loadLoop(ctx context.Context) {
 			continue
 		}
 		wctx, wcancel := context.WithTimeout(ctx, 4*time.Second)
-		if w, err := cl.Online(wctx, sid); err == nil {
-			e.mu.Lock()
-			e.status.WAN = w
-			e.mu.Unlock()
-		}
+		w, err := cl.Online(wctx, sid)
 		wcancel()
-		if time.Since(last) < 30*time.Second {
+		e.onlineResult(cfg, w, err)
+		if !cfg.BoxStats || time.Since(last) < 30*time.Second {
 			continue
 		}
 		last = time.Now()
@@ -900,4 +939,203 @@ func (e *Engine) hostsLoop(ctx context.Context) {
 		}
 		e.trk().SetHosts(fh)
 	}
+}
+
+// SetPaused pauses or resumes the capture by hand. Resuming during an
+// automatic pause also keeps auto pause off for a while: the user wants to
+// see the traffic now, even at the cost of speed.
+func (e *Engine) SetPaused(p bool) {
+	e.pauseMu.Lock()
+	switch {
+	case p && !e.manualPause && !e.autoPaused:
+		e.manualPause, e.pausedAt = true, time.Now()
+		e.log.Print("Mitschnitt von Hand pausiert")
+	case p:
+		e.manualPause = true
+	case e.manualPause || e.autoPaused:
+		if e.autoPaused {
+			e.autoHold = time.Now().Add(autoHoldManual)
+		}
+		e.manualPause, e.autoPaused = false, false
+		e.log.Print("Mitschnitt wird fortgesetzt")
+	}
+	e.pauseMu.Unlock()
+	signal(e.pauseKick)
+	signal(e.wake)
+}
+
+// pauseState returns "auto", "manual" or "" and when the pause started.
+func (e *Engine) pauseState() (string, time.Time) {
+	e.pauseMu.Lock()
+	defer e.pauseMu.Unlock()
+	switch {
+	case e.manualPause:
+		return "manual", e.pausedAt
+	case e.autoPaused:
+		return "auto", e.pausedAt
+	}
+	return "", time.Time{}
+}
+
+// onlineResult stores an online monitor reading and pauses the capture
+// when the line is busy.
+func (e *Engine) onlineResult(cfg config.Config, w *fritz.WANMonitor, err error) {
+	e.mu.Lock()
+	switch {
+	case err == nil:
+		e.status.WAN, e.status.PauseInfo = w, ""
+	case errors.Is(err, fritz.ErrNoLoadAPI):
+		e.status.PauseInfo = "Automatische Pause nicht verfügbar: Sie braucht den Online-Monitor ab FRITZ!OS 8. " +
+			"Während eines Mitschnitts leitet die FRITZ!Box Daten deutlich langsamer weiter."
+	}
+	e.mu.Unlock()
+	if err != nil || !cfg.AutoPause {
+		return
+	}
+	rate, busy := lineBusy(w)
+	if !busy {
+		return
+	}
+	e.pauseMu.Lock()
+	defer e.pauseMu.Unlock()
+	if e.manualPause || e.autoPaused || time.Now().Before(e.autoHold) {
+		return
+	}
+	now := time.Now()
+	if !e.resumedAt.IsZero() && now.Sub(e.resumedAt) < autoRepauseWin {
+		e.pauseStreak = min(e.pauseStreak+1, 3)
+	} else {
+		e.pauseStreak = 0
+	}
+	e.autoPaused, e.pausedAt, e.pauseRate = true, now, rate
+	e.log.Printf("Internetleitung ausgelastet (%.0f Mbit/s) – Mitschnitt pausiert, damit die FRITZ!Box mit voller Geschwindigkeit weiterleitet", rate*8/1e6)
+	signal(e.pauseKick)
+}
+
+// lineBusy reports whether the last autoPauseSamples readings in one
+// direction all reached autoPauseHigh, and the lowest of them.
+func lineBusy(w *fritz.WANMonitor) (float64, bool) {
+	for _, h := range [][]float64{w.DownHist, w.UpHist} {
+		if len(h) < autoPauseSamples {
+			continue
+		}
+		low := h[len(h)-1]
+		for _, v := range h[len(h)-autoPauseSamples:] {
+			low = min(low, v)
+		}
+		if low >= autoPauseHigh {
+			return low, true
+		}
+	}
+	return 0, false
+}
+
+// lineQuiet reports whether the average rate over the last d stayed below
+// autoResumeLow in both directions.
+func lineQuiet(w *fritz.WANMonitor, d time.Duration) bool {
+	n := max(1, int(d/sampleStep))
+	for _, h := range [][]float64{w.DownHist, w.UpHist} {
+		if len(h) < n {
+			return false
+		}
+		sum := 0.0
+		for _, v := range h[len(h)-n:] {
+			sum += v
+		}
+		if sum/float64(n) >= autoResumeLow {
+			return false
+		}
+	}
+	return true
+}
+
+// pauseLoop runs while the capture is paused. For an automatic pause it
+// watches the online monitor (own session, no capture) and resumes once the
+// line has been quiet for a while; repeated pauses wait longer.
+func (e *Engine) pauseLoop(ctx context.Context) {
+	var cl *fritz.Client
+	var sid string
+	defer func() {
+		if sid != "" {
+			c, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			cl.Logout(c, sid)
+			cancel()
+		}
+	}()
+	var failSince time.Time
+	t := time.NewTicker(onlinePoll)
+	defer t.Stop()
+	for {
+		cfg := e.Config()
+		kind, since := e.pauseState()
+		if kind == "auto" && !cfg.AutoPause {
+			e.SetPaused(false) // switched off in the settings
+			kind = ""
+		}
+		if kind == "" || !e.wanted(cfg) {
+			return
+		}
+		e.pauseMu.Lock()
+		quiet := min(autoResumeQuiet<<e.pauseStreak, autoResumeMax)
+		rate := e.pauseRate
+		e.pauseMu.Unlock()
+		if kind == "auto" {
+			e.setStatus(StatePaused, fmt.Sprintf("Internetleitung ausgelastet (%.0f Mbit/s): Während eines Mitschnitts leitet die FRITZ!Box "+
+				"Daten deutlich langsamer weiter. FritzFlow pausiert deshalb und setzt fort, sobald %d s lang weniger los ist.",
+				rate*8/1e6, int(quiet.Seconds())))
+		} else {
+			e.setStatus(StatePaused, "Mitschnitt pausiert")
+		}
+		if kind == "auto" || cfg.BoxStats {
+			var w *fritz.WANMonitor
+			err := errors.New("keine Sitzung")
+			if cl == nil {
+				cl, err = e.clientFor(cfg)
+			}
+			if cl != nil && sid == "" {
+				lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				sid, err = cl.Login(lctx)
+				cancel()
+			}
+			if sid != "" {
+				wctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+				w, err = cl.Online(wctx, sid)
+				cancel()
+				if errors.Is(err, fritz.ErrAuth) {
+					sid = "" // session expired: log in again next time
+				}
+			}
+			e.onlineResult(config.Config{BoxStats: cfg.BoxStats}, w, err) // only store, never trigger here
+			switch {
+			case kind != "auto":
+			case err == nil:
+				failSince = time.Time{}
+				if time.Since(since) >= quiet && lineQuiet(w, quiet) {
+					e.resume()
+					return
+				}
+			case failSince.IsZero():
+				failSince = time.Now()
+			case time.Since(failSince) > autoNoDataResume:
+				e.log.Printf("Online-Monitor nicht lesbar (%v) – setze Mitschnitt fort", err)
+				e.resume()
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-e.restart: // new config: re-read at the top
+		case <-e.pauseKick:
+		case <-t.C:
+		}
+	}
+}
+
+// resume ends an automatic pause.
+func (e *Engine) resume() {
+	e.pauseMu.Lock()
+	e.autoPaused, e.resumedAt = false, time.Now()
+	e.pauseMu.Unlock()
+	e.log.Print("Internetleitung wieder ruhig – Mitschnitt wird fortgesetzt")
 }

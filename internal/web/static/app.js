@@ -1099,6 +1099,7 @@ function renderStatus(st) {
     live: 'Live · ' + st.iface,
     connecting: st.message || 'Verbinde …',
     idle: 'Pausiert',
+    paused: st.paused === 'auto' ? 'Pausiert · Leitung ausgelastet' : 'Pausiert',
     error: 'Fehler',
     setup: 'Einrichtung nötig',
   }[st.state] || st.state;
@@ -1107,6 +1108,8 @@ function renderStatus(st) {
   const banners = [];
   if (st.demo) banners.push(['info', 'Demo-Modus: Es werden simulierte Daten angezeigt, keine echte FRITZ!Box.']);
   if (st.state === 'error') banners.push(['err', st.message]);
+  if (st.state === 'paused' && st.paused === 'auto') banners.push(['info resume', st.message]);
+  if (st.pauseInfo && st.autoPause) banners.push(['warn', st.pauseInfo]);
   if (st.fallback) banners.push(['warn', st.fallback]);
   if (st.guestInfo) banners.push(['warn', st.guestInfo]);
   if (st.hostsInfo) banners.push(['warn', st.hostsInfo + ' – Geräte werden mit IP-Adresse angezeigt.']);
@@ -1114,9 +1117,17 @@ function renderStatus(st) {
   const box = $('#banners');
   if (box.dataset.key !== key) {
     box.dataset.key = key;
-    box.innerHTML = banners.map(([c, m]) => `<div class="banner ${c}">${esc(m)}${c === 'err' ? '<button class="btn" data-open-setup>Einstellungen</button>' : ''}</div>`).join('');
+    box.innerHTML = banners.map(([c, m]) => `<div class="banner ${c}">${esc(m)}${c === 'err' ? '<button class="btn" data-open-setup>Einstellungen</button>' : ''}${c === 'info resume' ? '<button class="btn" data-resume title="Auto-Pause für 10 Minuten aussetzen">Jetzt fortsetzen</button>' : ''}</div>`).join('');
   }
   if (st.state === 'setup' && !S.setupShown) { S.setupShown = true; openSetup(); }
+  const pb = $('#pauseBtn');
+  pb.hidden = st.state === 'setup';
+  const paused = !!st.paused;
+  if (pb.classList.contains('paused') !== paused) {
+    pb.classList.toggle('paused', paused);
+    const t = paused ? 'Mitschnitt fortsetzen' : 'Mitschnitt pausieren';
+    pb.title = t; pb.setAttribute('aria-label', t);
+  }
   const title = st.boxName ? 'FritzFlow · ' + st.boxName : 'FritzFlow';
   if (document.title !== title) document.title = title;
   $('#footer').innerHTML = [
@@ -1129,7 +1140,15 @@ function renderStatus(st) {
     `<span>FritzFlow ${esc(st.version)}</span>`,
   ].join('');
 }
-$('#banners').addEventListener('click', (e) => { if (e.target.closest('[data-open-setup]')) openSetup(); });
+$('#banners').addEventListener('click', (e) => {
+  if (e.target.closest('[data-open-setup]')) openSetup();
+  if (e.target.closest('[data-resume]')) setPaused(false);
+});
+async function setPaused(p) {
+  $('#pauseBtn').classList.toggle('paused', p); // instant feedback; the next status confirms
+  try { await post('api/pause', { paused: p }); } catch { /* next status shows the real state */ }
+}
+$('#pauseBtn').addEventListener('click', () => setPaused(!$('#pauseBtn').classList.contains('paused')));
 
 // one broken tile must never take the others down
 function safe(name, fn) { try { fn(); } catch (e) { console.error('FritzFlow: Fehler in ' + name, e); } }
@@ -1319,6 +1338,7 @@ async function openSetup() {
   $('#cancelBtn').hidden = !c.passwordSet && !c.readOnly;
   form.openBrowser.checked = c.openBrowser !== false;
   form.boxStats.checked = c.boxStats !== false;
+  form.autoPause.checked = c.autoPause !== false;
   form.exitAfterMinutes.value = c.exitAfterMinutes ?? 2;
   form.captureGuest.checked = !!c.captureGuest;
   await fillBrowsers(c.browser || '');
@@ -1368,6 +1388,7 @@ function formData() {
     reverseDns: form.reverseDns.checked,
     openBrowser: form.openBrowser.checked,
     boxStats: form.boxStats.checked,
+    autoPause: form.autoPause.checked,
     exitAfterMinutes: Math.max(0, Math.round(+form.exitAfterMinutes.value || 0)),
     captureGuest: form.captureGuest.checked,
     browser: form.browserSel.value === 'custom' ? form.browserCustom.value.trim() : form.browserSel.value,

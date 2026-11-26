@@ -20,6 +20,9 @@
   <div id="status" class="status-pill" data-state="connecting" title="">
     <span class="dot"></span><span id="statusText">Verbinde …</span>
   </div>
+  <button id="pauseBtn" class="icon-btn" title="Mitschnitt pausieren" aria-label="Mitschnitt pausieren" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-pause" d="M8 5v14M16 5v14"/><path class="i-play" d="M7 4.5l12 7.5-12 7.5z"/></svg>
+  </button>
   <div class="spacer"></div>
   <label class="search">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14zM20 20l-4-4"/></svg>
@@ -253,6 +256,7 @@
     </label>
     <label class="radio"><input type="checkbox" name="captureGuest"> Gastnetz zusätzlich mitschneiden (eigene Schnittstelle <code>1-guest</code>, etwas mehr Last auf der FRITZ!Box)</label>
     <label class="radio"><input type="checkbox" name="reverseDns"> Unbekannte Ziel-IPs per Reverse-DNS benennen</label>
+    <label class="radio"><input type="checkbox" name="autoPause"> Mitschnitt automatisch pausieren, wenn die Internetleitung ausgelastet ist (empfohlen: Während eines Mitschnitts leitet die FRITZ!Box Daten deutlich langsamer weiter)</label>
     <label class="radio"><input type="checkbox" name="boxStats"> FRITZ!Box-Daten anzeigen: Online-Monitor (alle 5 s), CPU, Temperatur, RAM, Energie (alle 30 s)</label>
     <fieldset class="field"><legend>Browser</legend>
       <div class="row-btn">

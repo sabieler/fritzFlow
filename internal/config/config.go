@@ -46,6 +46,10 @@ type Config struct {
 	InsecureTLS bool   `json:"insecure_tls"`
 	// BoxStats enables polling CPU/temperature/RAM/energy of the box.
 	BoxStats bool `json:"box_stats"`
+	// AutoPause stops the capture while the internet line is busy: the box
+	// forwards much slower while any capture runs (7590: ~55 instead of
+	// 260 Mbit/s). Needs the online monitor (FRITZ!OS 8).
+	AutoPause bool `json:"auto_pause"`
 	// CaptureGuest additionally captures the guest network (1-guest), which
 	// is a separate bridge on the box and not part of 1-lan.
 	CaptureGuest bool `json:"capture_guest,omitempty"`
@@ -70,6 +74,7 @@ func Default() Config {
 		CaptureMode: ModeOnDemand,
 		ReverseDNS:  true,
 		BoxStats:    true,
+		AutoPause:   true,
 		OpenBrowser: true,
 		InsecureTLS: true, // FRITZ!Box uses a self-signed certificate
 	}

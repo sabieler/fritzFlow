@@ -21,6 +21,8 @@ Abhängigkeiten, ohne Cloud.
 > **English:** FritzFlow turns the built-in packet capture of an AVM FRITZ!Box router into a live
 > dashboard showing which device talks to which service. Single binary for Windows, macOS and Linux,
 > no dependencies, no cloud – everything stays on your computer. The UI is in German.
+> Note: while any packet capture runs, the FRITZ!Box forwards traffic much slower (7590: ~55 instead
+> of 262 Mbit/s); FritzFlow therefore pauses the capture automatically while the line is busy.
 
 ## Funktionen
 
@@ -34,6 +36,9 @@ Abhängigkeiten, ohne Cloud.
   fehlgeschlagene Verbindungen (keine Antwort, abgelehnt, nicht erreichbar) – mit Filter „Fehler“
 - **Kacheln ein-/ausblenden** über das Ansicht-Menü (ausgeblendete Kacheln kosten keine Rechenzeit)
 - **Sortierung pro Ansicht**: nach Aktivität oder ruhig/statisch (Fest, Volumen, A–Z)
+- **Auto-Pause**: Ist die Internetleitung ausgelastet, pausiert der Mitschnitt von selbst, damit
+  die FRITZ!Box wieder mit voller Geschwindigkeit weiterleitet (siehe [Geschwindigkeit](#geschwindigkeit-und-last-der-fritzbox)).
+  Pause-Knopf oben neben dem Status
 - **Name, Modell und FRITZ!OS-Version** der Box werden angezeigt
 - **FRITZ!Box-Daten** (abschaltbar, FRITZ!OS 8): CPU-Last, Temperatur, RAM, Energieverbrauch mit
   24-h-Verlauf sowie der **Online-Monitor** – echter Durchsatz am Anschluss, Leitungsauslastung und
@@ -110,7 +115,25 @@ Lege unter *System → FRITZ!Box-Benutzer* einen eigenen Benutzer an (z. B. `fri
 
 So bleibt dein Admin-Zugang unberührt, und der Zugang lässt sich jederzeit sperren.
 
-## Schonung der FRITZ!Box
+## Geschwindigkeit und Last der FRITZ!Box
+
+**Wichtig:** Solange irgendein Paketmitschnitt läuft – egal ob über FritzFlow, ein anderes Werkzeug
+oder die Box-Oberfläche –, leitet die FRITZ!Box Daten deutlich langsamer weiter. In einem Test mit
+einer FRITZ!Box 7590 an einer 250-Mbit/s-Leitung sank der Download von 262 auf etwa 55 Mbit/s,
+unabhängig von Schnittstelle und Detailgrad. Nach dem Ende des Mitschnitts ist sofort wieder die
+volle Geschwindigkeit da. Wie stark der Effekt bei anderen Modellen ist, ist nicht getestet.
+
+Darum gibt es die **Auto-Pause** (Standard, FRITZ!OS 8): FritzFlow liest den Durchsatz am
+Anschluss über den Online-Monitor der Box, der dafür keinen Mitschnitt braucht. Liegt er 10 s lang
+über 30 Mbit/s (Download oder Upload), stoppt FritzFlow den Mitschnitt; im Test lief der Download
+nach 15–20 s wieder mit voller Geschwindigkeit. Liegt der Durchsatz 60 s lang im Schnitt unter
+15 Mbit/s, startet der Mitschnitt neu (nach wiederholten Pausen kurz hintereinander länger).
+Während der Pause zeigt FritzFlow den Hinweis „Pausiert · Leitung ausgelastet“; Verkehr in dieser
+Zeit erscheint nicht pro Gerät. Mit **„Jetzt fortsetzen“** läuft der Mitschnitt trotz Last weiter
+(Auto-Pause dann 10 Minuten aus). Bei anhaltend hoher Last, etwa langem 4K-Streaming, bleibt
+der Mitschnitt entsprechend lange pausiert.
+
+Außerdem:
 
 - Pro Paket überträgt die Box nur die ersten Bytes (**Detailgrad**, Standard 200 B) – keine Inhalte.
 - Standardmäßig läuft der Mitschnitt **nur, solange die Ansicht geöffnet ist** (20 s Nachlauf).
@@ -145,6 +168,7 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `snaplen` | `200` | Bytes pro Paket (64–1600) |
 | `capture_mode` | `on-demand` | oder `always` |
 | `reverse_dns` | `true` | unbekannte IPs per PTR benennen |
+| `auto_pause` | `true` | Mitschnitt pausieren, solange die Internetleitung ausgelastet ist (braucht FRITZ!OS 8) |
 | `box_stats` | `true` | FRITZ!Box-Daten abfragen (Online-Monitor alle 5 s, Auslastung alle 30 s) |
 | `listen` | `127.0.0.1:8484` | Adresse der Weboberfläche |
 | `open_browser` | `true` | Browser beim Start öffnen |

@@ -105,6 +105,12 @@ button, input, select { font: inherit; color: inherit; }
 .status-pill[data-state="error"] .dot { background: var(--err); }
 .status-pill[data-state="setup"] { color: var(--info); }
 .status-pill[data-state="setup"] .dot { background: var(--info); }
+.status-pill[data-state="paused"] { color: var(--info); }
+.status-pill[data-state="paused"] .dot { background: var(--info); }
+#pauseBtn .i-play { display: none; }
+#pauseBtn.paused .i-pause { display: none; }
+#pauseBtn.paused .i-play { display: inline; }
+#pauseBtn.paused svg { stroke: var(--info); }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 70%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 @keyframes blink { 50% { opacity: .35; } }
 
