@@ -190,6 +190,29 @@ func TestFallbackWhileInterfaceBlocked(t *testing.T) {
 	waitFor("back on 1-lan", func(s Status) bool { return s.State == StateLive && s.Fallback == "" })
 }
 
+// Run ends by itself once no browser has been connected for ExitAfter.
+func TestExitsWhenBrowserClosed(t *testing.T) {
+	exitCheck = 50 * time.Millisecond
+	cfg := config.Default()
+	after := 500 * time.Millisecond
+	e := New(cfg, Options{ConfigPath: filepath.Join(t.TempDir(), "c.json"), Logger: log.New(io.Discard, "", 0),
+		ExitAfter: &after})
+	done := make(chan struct{})
+	go func() { e.Run(context.Background()); close(done) }()
+	leave := e.AddViewer()
+	select {
+	case <-done:
+		t.Fatal("must keep running while a browser is connected")
+	case <-time.After(1200 * time.Millisecond):
+	}
+	leave()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not exit after the browser was closed")
+	}
+}
+
 func TestOnDemandStopsWithoutViewers(t *testing.T) {
 	box, err := fakebox.Start("u", "p")
 	if err != nil {

@@ -1267,6 +1267,7 @@ async function openSetup() {
   $('#cancelBtn').hidden = !c.passwordSet && !c.readOnly;
   form.openBrowser.checked = c.openBrowser !== false;
   form.boxStats.checked = c.boxStats !== false;
+  form.exitAfterMinutes.value = c.exitAfterMinutes ?? 2;
   await fillBrowsers(c.browser || '');
   $('#cfgPath').textContent = c.path ? 'Gespeichert in: ' + c.path + (c.passwordEnv ? ' (Passwort aus FRITZFLOW_PASSWORD)' : '') : '';
   if (!dlg.open) dlg.showModal();
@@ -1314,6 +1315,7 @@ function formData() {
     reverseDns: form.reverseDns.checked,
     openBrowser: form.openBrowser.checked,
     boxStats: form.boxStats.checked,
+    exitAfterMinutes: Math.max(0, Math.round(+form.exitAfterMinutes.value || 0)),
     browser: form.browserSel.value === 'custom' ? form.browserCustom.value.trim() : form.browserSel.value,
   };
 }

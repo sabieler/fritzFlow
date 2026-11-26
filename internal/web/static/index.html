@@ -246,6 +246,10 @@
       <label class="radio"><input type="radio" name="captureMode" value="on-demand"> Nur solange diese Ansicht geöffnet ist (empfohlen)</label>
       <label class="radio"><input type="radio" name="captureMode" value="always"> Immer</label>
     </fieldset>
+    <label class="field"><span>FritzFlow beenden nach … Minuten ohne geöffnete Ansicht</span>
+      <input type="number" name="exitAfterMinutes" min="0" max="1440" step="1" inputmode="numeric">
+      <small class="hint">0 = weiterlaufen, bis FritzFlow von Hand beendet wird. Gilt nicht bei „Mitschnitt aktiv: Immer“.</small>
+    </label>
     <label class="radio"><input type="checkbox" name="reverseDns"> Unbekannte Ziel-IPs per Reverse-DNS benennen</label>
     <label class="radio"><input type="checkbox" name="boxStats"> FRITZ!Box-Daten anzeigen: Online-Monitor (alle 5 s), CPU, Temperatur, RAM, Energie (alle 30 s)</label>
     <fieldset class="field"><legend>Browser</legend>

@@ -98,9 +98,10 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `box_stats` | `true` | FRITZ!Box-Daten abfragen (Online-Monitor alle 5 s, Auslastung alle 30 s) |
 | `listen` | `127.0.0.1:8484` | Adresse der Weboberfläche |
 | `open_browser` | `true` | Browser beim Start öffnen |
+| `exit_after_minutes` | `2` | FritzFlow beendet sich so viele Minuten nach dem Schließen des letzten Tabs; `0` = weiterlaufen. Gilt nicht bei `capture_mode: always`; auch im Einstellungsdialog einstellbar |
 | `browser` | *(Systemstandard)* | Browser für die Oberfläche, z. B. `vivaldi`, `Firefox` (macOS-App-Name) oder `C:\…\chrome.exe` – auch im Einstellungsdialog wählbar |
 
-Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-demo`, `-version`.
+Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <minuten>` (überschreibt `exit_after_minutes`, `0` = nie beenden), `-demo`, `-version`.
 
 ## Fehlerbehebung
 

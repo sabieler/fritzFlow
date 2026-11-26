@@ -42,6 +42,7 @@ func run() error {
 	demo := flag.Bool("demo", false, "Demo-Modus mit simulierter FRITZ!Box (keine echte Box nötig)")
 	listen := flag.String("listen", "", "Adresse der Weboberfläche, z. B. 127.0.0.1:8484 (überschreibt Konfiguration)")
 	noBrowser := flag.Bool("no-browser", false, "Browser beim Start nicht automatisch öffnen")
+	exitAfterMin := flag.Int("exit-after", -1, "Minuten ohne geöffnete Ansicht, nach denen sich FritzFlow beendet (0 = nie; Standard: aus der Konfiguration, sonst 2)")
 	showVersion := flag.Bool("version", false, "Version anzeigen")
 	flag.Parse()
 	if *showVersion {
@@ -63,6 +64,10 @@ func run() error {
 	defer stop()
 
 	opts := engine.Options{ConfigPath: *cfgPath, Version: version, Logger: logger}
+	if *exitAfterMin >= 0 {
+		d := time.Duration(*exitAfterMin) * time.Minute
+		opts.ExitAfter = &d
+	}
 	if *demo {
 		box, err := fakebox.Start("demo", "demo")
 		if err != nil {

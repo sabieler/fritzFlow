@@ -44,8 +44,12 @@ const (
 	fallbackIface = "3-0"
 )
 
-// fallbackProbe is how often a blocked interface is checked during fallback.
-var fallbackProbe = 30 * time.Second
+var (
+	// fallbackProbe is how often a blocked interface is checked during fallback.
+	fallbackProbe = 30 * time.Second
+	// exitCheck is how often exitWhenUnused looks for connected browsers.
+	exitCheck = 5 * time.Second
+)
 
 // Status describes what the engine is doing.
 type Status struct {
@@ -84,6 +88,10 @@ type Options struct {
 	Demo       bool
 	Version    string
 	Logger     *log.Logger
+	// ExitAfter, if not nil, overrides the configured exit_after_minutes:
+	// Run ends once no browser has been connected for this long (0 = never).
+	// Never applies in capture mode "always".
+	ExitAfter *time.Duration
 }
 
 // Engine is the application core.
@@ -313,13 +321,50 @@ func (e *Engine) publish(b []byte) {
 
 // Run blocks until ctx is cancelled.
 func (e *Engine) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	e.trk().Start(ctx)
 	var wg sync.WaitGroup
+	e.supervise(ctx, &wg, "exit", func(ctx context.Context) { e.exitWhenUnused(ctx, cancel) })
 	e.supervise(ctx, &wg, "tick", e.tickLoop)
 	e.supervise(ctx, &wg, "capture", e.captureLoop)
 	e.supervise(ctx, &wg, "hosts", e.hostsLoop)
 	e.supervise(ctx, &wg, "load", e.loadLoop)
 	wg.Wait()
+}
+
+// exitWhenUnused calls stop once no browser has been connected for the
+// configured time (counted from program start if none ever connected), so
+// the process does not keep running in the background after the tab is
+// closed. The setting is re-read on every check and applies at once.
+func (e *Engine) exitWhenUnused(ctx context.Context, stop context.CancelFunc) {
+	start := time.Now()
+	t := time.NewTicker(exitCheck)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		cfg := e.Config()
+		after := cfg.ExitAfter()
+		if e.opt.ExitAfter != nil {
+			after = *e.opt.ExitAfter
+		}
+		if after <= 0 || e.viewers.Load() > 0 || cfg.CaptureMode == config.ModeAlways {
+			continue
+		}
+		last := time.Unix(0, e.lastViewer.Load())
+		if last.Before(start) {
+			last = start
+		}
+		if time.Since(last) >= after {
+			e.log.Printf("Seit %s ist kein Browser mehr verbunden – FritzFlow beendet sich", after)
+			stop()
+			return
+		}
+	}
 }
 
 // supervise runs fn and restarts it after a panic.

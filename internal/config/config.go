@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sabieler/fritzFlow/internal/browser"
 )
@@ -25,6 +26,10 @@ const (
 	MinSnaplen     = 64
 	MaxSnaplen     = 1600
 	DefaultSnaplen = 200
+
+	// DefaultExitAfterMinutes is long enough for a page reload or a browser restart.
+	DefaultExitAfterMinutes = 2
+	MaxExitAfterMinutes     = 24 * 60
 )
 
 // Config is the persisted configuration.
@@ -41,6 +46,9 @@ type Config struct {
 	InsecureTLS bool   `json:"insecure_tls"`
 	// BoxStats enables polling CPU/temperature/RAM/energy of the box.
 	BoxStats bool `json:"box_stats"`
+	// ExitAfterMinutes ends FritzFlow this many minutes after the last
+	// browser tab was closed; 0 keeps it running. nil = DefaultExitAfter.
+	ExitAfterMinutes *int `json:"exit_after_minutes,omitempty"`
 	// Browser used to open the UI at startup ("" = system default).
 	Browser string `json:"browser,omitempty"`
 	// TR064URL overrides the TR-064 endpoint (default: same host, port 49000).
@@ -103,6 +111,19 @@ func (c *Config) Normalize() {
 	}
 	c.TR064URL = strings.TrimRight(strings.TrimSpace(c.TR064URL), "/")
 	c.Browser = strings.TrimSpace(c.Browser)
+	if c.ExitAfterMinutes != nil {
+		m := max(0, min(MaxExitAfterMinutes, *c.ExitAfterMinutes))
+		c.ExitAfterMinutes = &m
+	}
+}
+
+// ExitAfter is how long FritzFlow keeps running without a connected browser
+// (0 = forever).
+func (c Config) ExitAfter() time.Duration {
+	if c.ExitAfterMinutes == nil {
+		return DefaultExitAfterMinutes * time.Minute
+	}
+	return time.Duration(*c.ExitAfterMinutes) * time.Minute
 }
 
 // Validate reports configuration errors in user-facing German.

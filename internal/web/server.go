@@ -118,6 +118,8 @@ type configView struct {
 	Browser     string `json:"browser"`
 	OpenBrowser bool   `json:"openBrowser"`
 	BoxStats    bool   `json:"boxStats"`
+	// ExitAfterMinutes: 0 = keep running after the last tab was closed.
+	ExitAfterMinutes int `json:"exitAfterMinutes"`
 }
 
 func (s *server) config(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +131,7 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 			Interface: c.Interface, Snaplen: c.Snaplen, CaptureMode: c.CaptureMode,
 			ReverseDNS: c.ReverseDNS, ReadOnly: s.e.ReadOnly(), Path: s.e.ConfigPath(),
 			PasswordEnv: c.PasswordFromEnv(), Browser: c.Browser, OpenBrowser: c.OpenBrowser, BoxStats: c.BoxStats,
+			ExitAfterMinutes: int(c.ExitAfter() / time.Minute),
 		})
 	case http.MethodPost:
 		in, ok := readConfig(w, r)
@@ -155,6 +158,7 @@ func readConfig(w http.ResponseWriter, r *http.Request) (config.Config, bool) {
 		FritzBox: v.FritzBox, Username: v.Username, Password: v.Password,
 		Interface: v.Interface, Snaplen: v.Snaplen, CaptureMode: v.CaptureMode, ReverseDNS: v.ReverseDNS,
 		Browser: v.Browser, OpenBrowser: v.OpenBrowser, BoxStats: v.BoxStats,
+		ExitAfterMinutes: &v.ExitAfterMinutes,
 	}, true
 }
 
