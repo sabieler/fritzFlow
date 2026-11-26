@@ -96,6 +96,31 @@
     <button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
   </section>
 
+  <section class="grid-top">
+      <article class="card" data-tile="box" data-title="FRITZ!Box-Auslastung">
+        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2 id="boxTitle">FRITZ!Box</h2><span class="muted" id="boxSub"></span></div>
+        <div id="boxOff" class="box-off" hidden></div>
+        <div id="boxOn">
+          <div class="gauges">
+            <div class="gauge" id="gCpu"><canvas></canvas><div><b>–</b><span>CPU</span></div></div>
+            <div class="gauge" id="gTemp"><canvas></canvas><div><b>–</b><span>Temp.</span></div></div>
+            <div class="gauge" id="gRam"><canvas></canvas><div><b>–</b><span>RAM</span></div></div>
+            <div class="gauge" id="gPow"><canvas></canvas><div><b>–</b><span>Energie</span></div></div>
+          </div>
+          <div class="wanline" id="wanLine"></div>
+          <div class="boxhist"><canvas id="boxHist"></canvas></div>
+          <div class="legend mini"><span class="lg down"></span>CPU-Last<span class="lg temp"></span>Temperatur<span class="muted">· letzte 24 h</span></div>
+        </div>
+      </article>
+      <article class="card" data-tile="svc" data-title="Dienste">
+        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Dienste</h2></div>
+        <div class="donut-wrap">
+          <canvas id="donut"></canvas>
+          <ul id="svcLegend" class="svc-legend"></ul>
+        </div>
+      </article>
+  </section>
+
   <section class="grid-main">
     <article class="card flow-card" data-tile="flow" data-title="Live-Verkehr">
       <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button>
@@ -113,38 +138,18 @@
       </div>
     </article>
     <div class="side">
-      <article class="card" data-tile="box" data-title="FRITZ!Box-Auslastung">
-        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2 id="boxTitle">FRITZ!Box</h2><span class="muted" id="boxSub"></span></div>
-        <div id="boxOff" class="box-off" hidden></div>
-        <div id="boxOn">
-          <div class="gauges">
-            <div class="gauge" id="gCpu"><canvas></canvas><div><b>–</b><span>CPU</span></div></div>
-            <div class="gauge" id="gTemp"><canvas></canvas><div><b>–</b><span>Temp.</span></div></div>
-            <div class="gauge" id="gRam"><canvas></canvas><div><b>–</b><span>RAM</span></div></div>
-            <div class="gauge" id="gPow"><canvas></canvas><div><b>–</b><span>Energie</span></div></div>
-          </div>
-          <div class="wanline" id="wanLine"></div>
-          <div class="boxhist"><canvas id="boxHist"></canvas></div>
-          <div class="legend mini"><span class="lg down"></span>CPU-Last<span class="lg temp"></span>Temperatur<span class="muted">· letzte 24 h</span></div>
-        </div>
-      </article>
+      
       <article class="card" data-tile="dest" data-title="Top-Ziele">
         <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Top-Ziele</h2><div class="mini-seg" data-view="dest" role="group" aria-label="Sortierung"><button type="button" data-v="live">Aktivität</button><button type="button" data-v="static">Volumen</button></div></div>
         <ol id="topDest" class="rank"></ol>
       </article>
-      <article class="card" data-tile="svc" data-title="Dienste">
-        <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Dienste</h2></div>
-        <div class="donut-wrap">
-          <canvas id="donut"></canvas>
-          <ul id="svcLegend" class="svc-legend"></ul>
-        </div>
-      </article>
+      
     </div>
   </section>
 
   <section class="grid-2">
     <article class="card" data-tile="history" data-title="Durchsatz">
-      <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Durchsatz</h2><span class="muted">letzte 5 Minuten</span></div>
+      <div class="card-head"><button type="button" class="tile-x" title="Kachel ausblenden (über „Ansicht“ wieder einblenden)" aria-label="Kachel ausblenden">✕</button><h2>Durchsatz</h2><div class="legend" id="histLegend"><span class="lg down"></span>Download<span class="lg up"></span>Upload<span class="lg cap" id="histCapLg" hidden></span><span id="histCapTxt" hidden>Mitschnitt</span><span class="muted">&nbsp;· 5 min</span></div></div>
       <div class="chart-wrap" id="histWrap">
         <canvas id="history"></canvas>
         <div id="histTip" class="tooltip" hidden></div>

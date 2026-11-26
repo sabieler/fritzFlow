@@ -184,7 +184,7 @@ function applyTiles() {
   const side = document.querySelector('.side');
   const sideVisible = [...side.querySelectorAll('[data-tile]')].some((t) => tileShown(t.dataset.tile));
   side.classList.toggle('tile-hidden', !sideVisible);
-  for (const sec of document.querySelectorAll('.grid-main, .grid-2')) {
+  for (const sec of document.querySelectorAll('.grid-top, .grid-main, .grid-2')) {
     const kids = [...sec.children].filter((k) => !k.classList.contains('tile-hidden'));
     sec.classList.toggle('single', kids.length < 2);
     sec.classList.toggle('tile-hidden', kids.length === 0);
@@ -293,7 +293,7 @@ function drawHistory() {
   const cv = $('#history');
   const { ctx, w, h } = fitCanvas(cv);
   ctx.clearRect(0, 0, w, h);
-  const N = 300, padL = 64, padR = 8, padT = 10, padB = 20;
+  const N = 300, padL = 78, padR = 8, padT = 10, padB = 20;
   const cw = w - padL - padR, ch = h - padT - padB;
   const pts = S.hist.slice(-N);
   const maxRx = Math.max(1000, ...pts.map((p) => Math.max(val(p, 'rx'), p.rx)));
@@ -305,11 +305,12 @@ function drawHistory() {
   for (const f of [1, 0.5]) {
     const y = axisY - topH * f + 0.5;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-    ctx.fillText(fmtRate(maxRx * f), padL - 8, y);
+    ctx.fillStyle = css.down; ctx.fillText('↓ ' + fmtRate(maxRx * f), padL - 8, y);
   }
   const yb = axisY + botH + 0.5;
   ctx.beginPath(); ctx.moveTo(padL, yb); ctx.lineTo(w - padR, yb); ctx.stroke();
-  ctx.fillText(fmtRate(maxTx), padL - 8, yb - 6);
+  ctx.fillStyle = css.up; ctx.fillText('↑ ' + fmtRate(maxTx), padL - 8, yb - 6);
+  ctx.fillStyle = css.muted; ctx.fillText('0', padL - 8, axisY);
   ctx.strokeStyle = css['border-strong'];
   ctx.beginPath(); ctx.moveTo(padL, axisY + 0.5); ctx.lineTo(w - padR, axisY + 0.5); ctx.stroke();
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
@@ -348,7 +349,10 @@ function drawHistory() {
     }
     ctx.restore();
   }
-  $('#histNote').textContent = hasWan() ? 'letzte 5 Minuten · Fläche: Anschluss (Online-Monitor) · gestrichelt: Mitschnitt' : 'letzte 5 Minuten';
+  $('#histCapLg').hidden = $('#histCapTxt').hidden = !hasWan();
+  $('#histLegend').title = hasWan()
+    ? 'Flächen: echter Durchsatz am Internet-Anschluss (FRITZ!Box-Online-Monitor). Gestrichelt: was der Paketmitschnitt davon sieht. Oben Download, unten Upload, die Mittellinie ist 0.'
+    : 'Oben Download, unten Upload (gespiegelt), die Mittellinie ist 0.';
   if (histHover >= 0 && histHover < pts.length) {
     const p = pts[histHover], x = x0 + histHover * step;
     ctx.strokeStyle = css.text2; ctx.setLineDash([3, 3]);
@@ -363,7 +367,7 @@ function drawHistory() {
 }
 $('#history').addEventListener('mousemove', (ev) => {
   const r = ev.currentTarget.getBoundingClientRect();
-  const N = 300, padL = 64, padR = 8, cw = r.width - padL - padR;
+  const N = 300, padL = 78, padR = 8, cw = r.width - padL - padR;
   const pts = Math.min(S.hist.length, N);
   const step = cw / (N - 1), x0 = padL + cw - (pts - 1) * step;
   const i = Math.round((ev.clientX - r.left - x0) / step);
@@ -1094,6 +1098,9 @@ function renderStatus(st) {
 }
 $('#banners').addEventListener('click', (e) => { if (e.target.closest('[data-open-setup]')) openSetup(); });
 
+// one broken tile must never take the others down
+function safe(name, fn) { try { fn(); } catch (e) { console.error('FritzFlow: Fehler in ' + name, e); } }
+
 function render() {
   const s = S.snap;
   if (!s) return;
@@ -1101,20 +1108,20 @@ function render() {
   const chip = $('#devChip');
   chip.hidden = !S.filter.dev;
   if (S.filter.dev) chip.textContent = devName(S.filter.dev);
-  renderFilterBar(s);
-  flowModel(s);
-  if (tileShown('dest')) renderTopDest(conns.filter((c) => !c.closed));
-  if (tileShown('svc')) drawDonut(conns);
-  if (tileShown('devices')) renderDevices(s);
-  if (tileShown('conns')) renderTable(conns);
-  if (tileShown('problems')) renderProblems(s);
+  safe('Filter', () => renderFilterBar(s));
+  safe('Live-Verkehr', () => flowModel(s));
+  if (tileShown('dest')) safe('Top-Ziele', () => renderTopDest(conns.filter((c) => !c.closed)));
+  if (tileShown('svc')) safe('Dienste', () => drawDonut(conns));
+  if (tileShown('devices')) safe('Geräte', () => renderDevices(s));
+  if (tileShown('conns')) safe('Verbindungen', () => renderTable(conns));
+  if (tileShown('problems')) safe('Probleme', () => renderProblems(s));
 }
 
 function drawAllStatic() {
-  if (tileShown('kpi-down')) drawSpark($('#sparkDown'), 'rx', css.down2);
-  if (tileShown('kpi-up')) drawSpark($('#sparkUp'), 'tx', css.up2);
-  if (tileShown('history')) drawHistory();
-  if (S.snap && tileShown('svc')) drawDonut(visibleConns(S.snap.conns, false));
+  if (tileShown('kpi-down')) safe('Download', () => drawSpark($('#sparkDown'), 'rx', css.down2));
+  if (tileShown('kpi-up')) safe('Upload', () => drawSpark($('#sparkUp'), 'tx', css.up2));
+  if (tileShown('history')) safe('Durchsatz', drawHistory);
+  if (S.snap && tileShown('svc')) safe('Dienste', () => drawDonut(visibleConns(S.snap.conns, false)));
 }
 
 function onSnapshot(s) {
@@ -1125,9 +1132,9 @@ function onSnapshot(s) {
     S.hist.push({ t: s.t, rx: s.totals.rxRate, tx: s.totals.txRate, wrx: w ? w.down : null, wtx: w ? w.up : null });
     if (S.hist.length > 300) S.hist.shift();
   }
-  renderStatus(s.status);
-  renderKpis(s);
-  if (tileShown('box')) renderBox(s.status);
+  safe('Status', () => renderStatus(s.status));
+  safe('Kennzahlen', () => renderKpis(s));
+  if (tileShown('box')) safe('FRITZ!Box', () => renderBox(s.status));
   render();
   drawAllStatic();
 }
