@@ -260,8 +260,9 @@ main { position: relative; z-index: 1; padding: 18px 24px 28px; display: grid; g
 .avatars .av svg { width: 16px; height: 16px; fill: none; stroke: var(--text2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .avatars .more { font-size: 11px; font-weight: 700; color: var(--text2); }
 
-.grid-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 18px; }
-.grid-main { display: grid; grid-template-columns: minmax(0, 2.3fr) minmax(300px, 1fr); gap: 18px; }
+/* one shared column grid so tile edges line up across all rows */
+:root { --cols: minmax(0, 2.1fr) minmax(320px, 1fr); }
+.grid-top, .grid-main, .grid-2 { display: grid; grid-template-columns: var(--cols); gap: 18px; }
 .flow-card { display: flex; flex-direction: column; }
 .flow-card .flow-wrap { flex: 1; min-height: var(--flow-h, 560px); height: auto; }
 .resize-grip { height: 14px; margin: 2px -18px -8px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-radius: 0 0 16px 16px; }
@@ -280,7 +281,6 @@ body.resizing { cursor: ns-resize; user-select: none; }
 .side > [data-tile="dest"] { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 @media (min-width: 1201px) { .grid-main > .side { min-height: 0; overflow: clip; overflow-clip-margin: 48px; } } /* height comes from Live-Verkehr only */
 .side > [data-tile="dest"] .rank { flex: 1; min-height: 0; overflow: hidden; align-content: start; }
-.grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 18px; }
 
 /* ---------- flow map ---------- */
 .flow-card { padding-bottom: 8px; }
