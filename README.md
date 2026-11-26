@@ -19,11 +19,25 @@ Abhängigkeiten.
 
 ## Schnellstart
 
-1. Passende Datei aus `dist/` herunterladen und starten:
-   - Windows: `fritzflow-…-windows-amd64.exe` doppelklicken
-   - macOS: `chmod +x fritzflow-…-darwin-arm64 && ./fritzflow-…-darwin-arm64`
-     (bei Gatekeeper-Warnung: `xattr -d com.apple.quarantine <datei>`)
-   - Linux: `chmod +x fritzflow-…-linux-amd64 && ./fritzflow-…-linux-amd64`
+1. Unter **[Releases](https://github.com/sabieler/fritzFlow/releases/latest)** die passende Datei herunterladen
+   (das Repo ist privat – dafür musst du bei GitHub angemeldet und Mitglied des Repos sein):
+
+   | System | Datei |
+   |---|---|
+   | Windows (Intel/AMD) | `fritzflow-…-windows-amd64.exe` |
+   | Windows (ARM) | `fritzflow-…-windows-arm64.exe` |
+   | macOS (Apple Silicon M1–M4) | `fritzflow-…-darwin-arm64` |
+   | macOS (Intel) | `fritzflow-…-darwin-amd64` |
+   | Linux (PC) | `fritzflow-…-linux-amd64` |
+   | Raspberry Pi 4/5 (64 Bit) | `fritzflow-…-linux-arm64` |
+
+   Starten:
+   - **Windows:** Datei doppelklicken. Bei „Der Computer wurde durch Windows geschützt“
+     auf *Weitere Informationen → Trotzdem ausführen* klicken (die Datei ist nicht signiert).
+   - **macOS:** im Terminal `chmod +x fritzflow-…-darwin-arm64 && xattr -d com.apple.quarantine fritzflow-…-darwin-arm64 && ./fritzflow-…-darwin-arm64`
+   - **Linux:** `chmod +x fritzflow-…-linux-amd64 && ./fritzflow-…-linux-amd64`
+
+   Oder selbst bauen (Go ≥ 1.21): `go build -o fritzflow .` bzw. `./scripts/build.sh` für alle Plattformen.
 2. Der Browser öffnet sich automatisch unter <http://localhost:8484>.
 3. Im Einrichtungsdialog FRITZ!Box-Adresse, Benutzer und Passwort eingeben →
    **Verbindung testen** → **Speichern & starten**.
@@ -106,7 +120,8 @@ mit Privacy-Adressen.
 go test ./...                 # Unit- und Ende-zu-Ende-Tests (gegen simulierte Box)
 go test -fuzz=FuzzDecode ./internal/flow
 go run . -demo                # UI mit simulierten Daten
-./scripts/build.sh            # alle Plattformen nach dist/
+./scripts/build.sh            # alle Plattformen nach dist/ (lokal, nicht im Repo)
+git tag v0.2.0 && git push origin v0.2.0   # baut & veröffentlicht automatisch ein Release
 ```
 
 Struktur:
