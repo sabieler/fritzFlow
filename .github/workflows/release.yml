@@ -31,7 +31,7 @@ jobs:
       # Für private Repos kostenpflichtig, daher nur bei öffentlichem Repo.
       - name: Build-Nachweis signieren
         if: startsWith(github.ref, 'refs/tags/') && !github.event.repository.private
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/fritzflow-*
