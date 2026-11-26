@@ -418,6 +418,15 @@ dialog[open] { animation: pop .25s ease; }
 #setupForm { padding: 22px 24px; display: grid; gap: 14px; max-height: calc(100vh - 40px); overflow: auto; }
 .dlg-head h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.01em; }
 .dlg-head p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.howto { border: 1px solid color-mix(in srgb, var(--info) 30%, transparent); background: color-mix(in srgb, var(--info) 7%, transparent); border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+.howto summary { cursor: pointer; font-weight: 650; color: var(--info); list-style: none; display: flex; align-items: center; gap: 8px; }
+.howto summary::-webkit-details-marker { display: none; }
+.howto summary::before { content: "▸"; transition: transform .2s; }
+.howto[open] summary::before { transform: rotate(90deg); }
+.howto ol { margin: 10px 0 6px; padding-left: 20px; display: grid; gap: 5px; color: var(--text2); line-height: 1.45; }
+.howto a { color: var(--down); }
+.howto code { background: var(--pill); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; font-size: 12px; }
+.howto p { margin: 4px 0 0; font-size: 12px; }
 .field { display: grid; gap: 6px; border: 0; margin: 0; padding: 0; min-width: 0; }
 .field > span, .field legend { font-size: 12px; font-weight: 600; color: var(--text2); padding: 0; margin-bottom: 6px; }
 .field input, .field select {

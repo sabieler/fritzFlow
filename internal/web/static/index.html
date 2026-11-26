@@ -207,8 +207,19 @@
   <form id="setupForm" method="dialog" autocomplete="off">
     <div class="dlg-head">
       <h2>FRITZ!Box verbinden</h2>
-      <p class="muted">Die Zugangsdaten bleiben auf diesem Rechner. Tipp: Lege in der FRITZ!Box unter <i>System → FRITZ!Box-Benutzer</i> einen eigenen Benutzer mit dem Recht <b>„FRITZ!Box Einstellungen“</b> an.</p>
+      <p class="muted">Die Zugangsdaten bleiben auf diesem Rechner und werden nur an deine FRITZ!Box geschickt.</p>
     </div>
+    <details class="howto" id="userHowto">
+      <summary>Empfohlen: eigenen FRITZ!Box-Benutzer für FritzFlow anlegen</summary>
+      <ol>
+        <li>Öffne die <a href="http://fritz.box" id="boxLink" target="_blank" rel="noopener">FRITZ!Box-Oberfläche</a> und gehe zu <b>System → FRITZ!Box-Benutzer → Benutzer hinzufügen</b>.</li>
+        <li>Name z.&nbsp;B. <code>fritzFlow</code>, ein eigenes Passwort vergeben.</li>
+        <li>Recht <b>„FRITZ!Box Einstellungen“</b> anhaken – zwingend für den Paketmitschnitt.</li>
+        <li><b>Kein</b> „Zugang aus dem Internet“ erlauben.</li>
+        <li>Speichern (evtl. an der Box per Taste bestätigen) und Benutzer und Passwort hier eintragen.</li>
+      </ol>
+      <p class="muted">So bleibt dein Admin-Zugang unberührt, und der Zugang lässt sich jederzeit sperren.</p>
+    </details>
     <div id="roNote" class="note" hidden>Demo-Modus: Die Einstellungen sind schreibgeschützt.</div>
     <label class="field"><span>Adresse</span><input name="fritzbox" placeholder="http://fritz.box" required></label>
     <div class="row2">

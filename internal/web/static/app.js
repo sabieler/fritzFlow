@@ -1257,6 +1257,10 @@ async function openSetup() {
   form.querySelectorAll('input[name=captureMode]').forEach((x) => { x.checked = x.value === (c.captureMode || 'on-demand'); });
   form.reverseDns.checked = c.reverseDns !== false;
   $('#roNote').hidden = !c.readOnly;
+  // first run: show how to create a dedicated FRITZ!Box user
+  $('#userHowto').open = !c.passwordSet && !c.readOnly;
+  $('#userHowto').hidden = !!c.readOnly;
+  $('#boxLink').href = /^https?:\/\//.test(form.fritzbox.value) ? form.fritzbox.value : 'http://fritz.box';
   form.querySelectorAll('input,select').forEach((x) => { x.disabled = !!c.readOnly; });
   $('#testBtn').disabled = $('#saveBtn').disabled = !!c.readOnly;
   $('#cancelBtn').hidden = !c.passwordSet && !c.readOnly;
@@ -1291,6 +1295,10 @@ $('#browserTestBtn').addEventListener('click', async () => {
     const j = await post('api/browser-test', { browser: b });
     setMsg(j.ok ? 'ok' : 'err', j.ok ? 'Browser gestartet – dort sollte FritzFlow jetzt aufgehen.' : j.message);
   } catch (e) { setMsg('err', e.message); }
+});
+form.fritzbox.addEventListener('input', () => {
+  const v = form.fritzbox.value.trim();
+  $('#boxLink').href = /^https?:\/\/[^\s]+$/.test(v) ? v : 'http://' + (v || 'fritz.box');
 });
 form.ifaceSel.addEventListener('change', () => { $('#ifaceCustomWrap').hidden = form.ifaceSel.value !== 'custom'; });
 function formData() {
