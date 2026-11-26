@@ -214,9 +214,10 @@ func (b *Box) capture(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	snap, _ := strconv.Atoi(q.Get("snaplen"))
-	if snap <= 0 {
-		snap = 1600
+	// bitSize 18 bounds the value to 0..262143 already while parsing
+	snap := 1600
+	if v, err := strconv.ParseUint(q.Get("snaplen"), 10, 18); err == nil && v > 0 {
+		snap = int(v)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	fl, _ := w.(http.Flusher)
