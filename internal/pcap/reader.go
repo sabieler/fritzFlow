@@ -17,6 +17,8 @@ const (
 	LinkNull      = 0
 	LinkEthernet  = 1
 	LinkRaw       = 101
+	LinkRawDLT12  = 12 // DLT_RAW on most platforms
+	LinkRawDLT14  = 14 // DLT_RAW as used by FRITZ!OS for the routing interface (3-0)
 	LinkLinuxSLL  = 113
 	LinkIPv4      = 228
 	LinkIPv6      = 229

@@ -88,7 +88,7 @@ func decodePacket(link uint32, b []byte, p *packet) bool {
 		}
 		b = b[4:]
 		etype = ipVersionType(b)
-	case pcap.LinkRaw, pcap.LinkIPv4, pcap.LinkIPv6:
+	case pcap.LinkRaw, pcap.LinkRawDLT12, pcap.LinkRawDLT14, pcap.LinkIPv4, pcap.LinkIPv6:
 		etype = ipVersionType(b)
 	default:
 		return false

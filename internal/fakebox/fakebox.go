@@ -36,6 +36,34 @@ type Box struct {
 	sim       *simulation
 	ctx       context.Context
 	cancel    context.CancelFunc
+	orphans   map[string]bool // interfaces blocked by an orphaned capture → sticky
+	stopAlls  int
+}
+
+// SimulateOrphanCapture blocks iface (e.g. "1-lan") like a capture whose
+// client vanished: starts fail. If sticky, no stop request releases it (like
+// FRITZ!OS until its TCP gives up); otherwise "Alle stoppen" does.
+func (b *Box) SimulateOrphanCapture(iface string, sticky bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.orphans == nil {
+		b.orphans = map[string]bool{}
+	}
+	b.orphans[iface] = sticky
+}
+
+// ReleaseOrphanCapture ends a simulated orphaned capture.
+func (b *Box) ReleaseOrphanCapture(iface string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.orphans, iface)
+}
+
+// StopAlls reports how often "Alle stoppen" was requested.
+func (b *Box) StopAlls() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.stopAlls
 }
 
 func randHex(n int) string {
@@ -147,6 +175,24 @@ func (b *Box) capture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q.Get("capture") != "Start" {
+		if q.Get("capture") == "Stop" && q.Get("iface") == "stopall" {
+			b.mu.Lock()
+			for k, sticky := range b.orphans {
+				if !sticky {
+					delete(b.orphans, k)
+				}
+			}
+			b.stopAlls++
+			b.mu.Unlock()
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	b.mu.Lock()
+	_, orphan := b.orphans[q.Get("ifaceorminor")]
+	b.mu.Unlock()
+	if orphan {
+		// Like FRITZ!OS while another capture runs: 200 with an empty body.
 		w.WriteHeader(http.StatusOK)
 		return
 	}

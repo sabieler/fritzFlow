@@ -1,6 +1,10 @@
 package fritz
 
-import "testing"
+import (
+	"net"
+	"net/netip"
+	"testing"
+)
 
 // Test vectors from the AVM Technical Note "Session ID".
 func TestSolveChallengePBKDF2(t *testing.T) {
@@ -79,5 +83,20 @@ func TestSeries(t *testing.T) {
 	}
 	if len(series("")) != 0 {
 		t.Fatal("empty")
+	}
+}
+
+func TestHasAddr(t *testing.T) {
+	_, n4, _ := net.ParseCIDR("192.168.3.20/24")
+	n4.IP = net.ParseIP("192.168.3.20")
+	n6 := &net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}
+	addrs := []net.Addr{n4, n6}
+	for _, tc := range []struct {
+		a    string
+		want bool
+	}{{"192.168.3.20", true}, {"::ffff:192.168.3.20", true}, {"fe80::1%eth0", true}, {"192.168.3.21", false}} {
+		if got := hasAddr(addrs, netip.MustParseAddr(tc.a).Unmap()); got != tc.want {
+			t.Errorf("hasAddr(%s) = %v, want %v", tc.a, got, tc.want)
+		}
 	}
 }

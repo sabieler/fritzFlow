@@ -99,6 +99,97 @@ func TestWrongPasswordReportsError(t *testing.T) {
 	}
 }
 
+// An orphaned capture (client vanished after a LAN/WLAN switch) ignores the
+// per-interface stop; the engine must fall back to "Alle stoppen".
+func TestRecoversFromOrphanedCapture(t *testing.T) {
+	box, err := fakebox.Start("u", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	box.SimulateOrphanCapture("1-lan", false)
+	cfg := config.Default()
+	cfg.FritzBox, cfg.TR064URL, cfg.Username, cfg.Password = box.URL, box.URL, "u", "p"
+	cfg.ReverseDNS = false
+	e := New(cfg, Options{ConfigPath: filepath.Join(t.TempDir(), "c.json"), Logger: log.New(io.Discard, "", 0)})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	defer e.AddViewer()()
+	for i := 0; i < 100 && e.state() != StateLive; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if s := e.state(); s != StateLive {
+		t.Fatalf("expected live after stopping the orphan, got %s (%s)", s, e.status.Message)
+	}
+	if n := box.StopAlls(); n != 1 {
+		t.Fatalf("expected exactly one \"Alle stoppen\", got %d", n)
+	}
+}
+
+// After the box itself ended our stream, a busy interface means somebody
+// else captures: the engine must not stop all captures then.
+func TestBusyAfterBoxEndedStreamDoesNotStopAll(t *testing.T) {
+	box, err := fakebox.Start("u", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	box.SimulateOrphanCapture("1-lan", false)
+	cfg := config.Default()
+	cfg.FritzBox, cfg.TR064URL, cfg.Username, cfg.Password = box.URL, box.URL, "u", "p"
+	cfg.ReverseDNS = false
+	e := New(cfg, Options{ConfigPath: filepath.Join(t.TempDir(), "c.json"), Logger: log.New(io.Discard, "", 0)})
+	e.lostAt.Store(time.Now().UnixNano())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	defer e.AddViewer()()
+	for i := 0; i < 50 && e.state() != StateError; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if s := e.state(); s != StateError {
+		t.Fatalf("expected error state, got %s", s)
+	}
+	if n := box.StopAlls(); n != 0 {
+		t.Fatalf("must not stop other captures, got %d stop-alls", n)
+	}
+}
+
+// An orphan that no stop request ends: capture the routing interface
+// meanwhile and switch back once the box releases the interface.
+func TestFallbackWhileInterfaceBlocked(t *testing.T) {
+	fallbackProbe = 200 * time.Millisecond
+	box, err := fakebox.Start("u", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	box.SimulateOrphanCapture("1-lan", true)
+	cfg := config.Default()
+	cfg.FritzBox, cfg.TR064URL, cfg.Username, cfg.Password = box.URL, box.URL, "u", "p"
+	cfg.ReverseDNS = false
+	e := New(cfg, Options{ConfigPath: filepath.Join(t.TempDir(), "c.json"), Logger: log.New(io.Discard, "", 0)})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	defer e.AddViewer()()
+	status := func() Status { e.mu.Lock(); defer e.mu.Unlock(); return e.status }
+	waitFor := func(what string, ok func(Status) bool) {
+		t.Helper()
+		for i := 0; i < 150; i++ {
+			if ok(status()) {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("timeout waiting for %s; status %+v", what, status())
+	}
+	waitFor("fallback live", func(s Status) bool { return s.State == StateLive && s.Fallback != "" })
+	box.ReleaseOrphanCapture("1-lan")
+	waitFor("back on 1-lan", func(s Status) bool { return s.State == StateLive && s.Fallback == "" })
+}
+
 func TestOnDemandStopsWithoutViewers(t *testing.T) {
 	box, err := fakebox.Start("u", "p")
 	if err != nil {

@@ -1079,6 +1079,7 @@ function renderStatus(st) {
   const banners = [];
   if (st.demo) banners.push(['info', 'Demo-Modus: Es werden simulierte Daten angezeigt, keine echte FRITZ!Box.']);
   if (st.state === 'error') banners.push(['err', st.message]);
+  if (st.fallback) banners.push(['warn', st.fallback]);
   if (st.hostsInfo) banners.push(['warn', st.hostsInfo + ' – Geräte werden mit IP-Adresse angezeigt.']);
   const key = JSON.stringify(banners);
   const box = $('#banners');

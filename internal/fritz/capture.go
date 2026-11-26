@@ -1,11 +1,15 @@
 package fritz
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -24,6 +28,87 @@ var ErrBusy = errors.New("FRITZ!Box startet keinen Mitschnitt")
 
 // ErrStreamEnded means the box closed the capture stream.
 var ErrStreamEnded = errors.New("Mitschnitt wurde von der FRITZ!Box beendet")
+
+// ErrNetChanged means the local address the capture stream ran over vanished
+// (network adapter switched off, LAN/WLAN change). The box usually keeps that
+// capture running for a while, so it has to be stopped before restarting.
+var ErrNetChanged = errors.New("Netzwerkverbindung dieses Rechners hat sich geändert – verbinde neu")
+
+// netWatchInterval is how often Capture checks that its local address still exists.
+var netWatchInterval = 2 * time.Second
+
+// watchLocalAddr calls gone once addr is no longer assigned to any interface.
+func watchLocalAddr(ctx context.Context, addr netip.Addr, gone func()) {
+	t := time.NewTicker(netWatchInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		addrs, err := net.InterfaceAddrs()
+		if err != nil {
+			continue // can't tell: keep going, the idle timeout still applies
+		}
+		if !hasAddr(addrs, addr) {
+			gone()
+			return
+		}
+	}
+}
+
+// CaptureAvailable reports whether a capture on iface can be started right
+// now. It starts one, checks that the box sends a capture header and stops
+// it again right away.
+func (c *Client) CaptureAvailable(ctx context.Context, sid, iface string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.captureURL(sid, iface, 68), nil)
+	if err != nil {
+		return false
+	}
+	resp, err := c.stream.Do(req)
+	if err != nil {
+		return false
+	}
+	head := make([]byte, 4)
+	_, err = io.ReadFull(resp.Body, head)
+	resp.Body.Close() // closes the connection: the box ends this capture
+	ok := resp.StatusCode == http.StatusOK && err == nil && !isText(head)
+	if ok {
+		sctx, scancel := context.WithTimeout(context.Background(), 8*time.Second)
+		c.StopCapture(sctx, sid, iface)
+		scancel()
+	}
+	return ok
+}
+
+func isText(b []byte) bool {
+	for _, c := range b {
+		if c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+func hasAddr(addrs []net.Addr, want netip.Addr) bool {
+	want = want.WithZone("")
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if got, ok := netip.AddrFromSlice(ip); ok && got.Unmap() == want {
+			return true
+		}
+	}
+	return false
+}
 
 type countingReader struct {
 	r    io.Reader
@@ -91,9 +176,29 @@ func (c *Client) StopCapture(ctx context.Context, sid, iface string) {
 	if !ok {
 		return
 	}
+	c.stop(ctx, sid, typ, minor, name)
+}
+
+// StopAllCaptures presses "Alle stoppen" on the capture page. Needed when an
+// orphaned capture (its client vanished, e.g. after a network switch) blocks
+// an interface and does not react to the per-interface stop. It also ends
+// captures started by others (FRITZ!Box UI, another FritzFlow).
+//
+// The box answers this request only once all captures have ended, which can
+// take minutes for an orphaned one, so callers should use a short timeout:
+// the stop is triggered as soon as the request arrives.
+func (c *Client) StopAllCaptures(ctx context.Context, sid string) {
+	c.get(ctx, url.Values{"iface": {"stopall"}, "capture": {"Stop"}, "sid": {sid}})
+}
+
+func (c *Client) stop(ctx context.Context, sid, typ, minor, name string) {
+	c.get(ctx, url.Values{"iface": {name}, "minor": {minor}, "type": {typ}, "capture": {"Stop"}, "sid": {sid}})
+}
+
+func (c *Client) get(ctx context.Context, q url.Values) {
 	u := *c.base
 	u.Path = strings.TrimRight(u.Path, "/") + "/cgi-bin/capture_notimeout"
-	u.RawQuery = url.Values{"iface": {name}, "minor": {minor}, "type": {typ}, "capture": {"Stop"}, "sid": {sid}}.Encode()
+	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return
@@ -111,7 +216,13 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 	received *atomic.Uint64, fn func(pcap.Packet)) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.captureURL(sid, iface, snaplen), nil)
+	var local netip.Addr
+	trace := &httptrace.ClientTrace{GotConn: func(i httptrace.GotConnInfo) {
+		if a, ok := i.Conn.LocalAddr().(*net.TCPAddr); ok {
+			local, _ = netip.AddrFromSlice(a.IP)
+		}
+	}}
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodGet, c.captureURL(sid, iface, snaplen), nil)
 	if err != nil {
 		return err
 	}
@@ -120,6 +231,12 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 		return c.netErr(err)
 	}
 	defer resp.Body.Close()
+	if local.IsValid() && !local.IsLoopback() {
+		go watchLocalAddr(ctx, local.Unmap(), func() {
+			c.stream.CloseIdleConnections() // pooled connections use the vanished address, too
+			cancel(ErrNetChanged)
+		})
+	}
 	switch {
 	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized:
 		return ErrSession
@@ -128,7 +245,14 @@ func (c *Client) Capture(ctx context.Context, sid, iface string, snaplen int, id
 	}
 	wd := time.AfterFunc(idle, func() { cancel(errIdle) })
 	defer wd.Stop()
-	rd, err := pcap.NewReader(&countingReader{r: resp.Body, n: received, wd: wd, idle: idle})
+	body := bufio.NewReader(resp.Body)
+	if head, _ := body.Peek(4); len(head) == 4 && isText(head) {
+		// Not a pcap header but a message, e.g. while the interface is
+		// still blocked by another capture.
+		msg, _ := io.ReadAll(io.LimitReader(body, 300))
+		return fmt.Errorf("%w: FRITZ!Box meldet %q", ErrBusy, strings.TrimSpace(string(msg)))
+	}
+	rd, err := pcap.NewReader(&countingReader{r: body, n: received, wd: wd, idle: idle})
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			return cause

@@ -38,7 +38,14 @@ const (
 	hostsInterval  = 5 * time.Minute
 	maxBackoff     = time.Minute
 	authBackoffMin = time.Minute
+	busyBackoffMax = 15 * time.Second
+	// fallbackIface is the routing interface: it sees all routed traffic
+	// with LAN addresses (before NAT) and is not blocked when 1-lan is.
+	fallbackIface = "3-0"
 )
+
+// fallbackProbe is how often a blocked interface is checked during fallback.
+var fallbackProbe = 30 * time.Second
 
 // Status describes what the engine is doing.
 type Status struct {
@@ -62,6 +69,7 @@ type Status struct {
 	Load       *fritz.BoxLoad    `json:"load,omitempty"`
 	WAN        *fritz.WANMonitor `json:"wan,omitempty"`
 	LoadInfo   string            `json:"loadInfo,omitempty"`
+	Fallback   string            `json:"fallback,omitempty"` // set while capturing fallbackIface instead
 }
 
 type message struct {
@@ -377,6 +385,9 @@ func (e *Engine) tickLoop(ctx context.Context) {
 			e.mu.Unlock()
 			st.StreamRate = streamRate
 			st.Box, st.Iface, st.Snaplen, st.Mode = cfg.FritzBox, cfg.Interface, cfg.Snaplen, cfg.CaptureMode
+			if st.Fallback != "" {
+				st.Iface = fallbackIface
+			}
 			st.Demo, st.ReadOnly, st.Version = e.opt.Demo, e.opt.ReadOnly, e.opt.Version
 			st.Viewers = e.viewers.Load()
 			st.BoxStats = cfg.BoxStats
@@ -443,6 +454,10 @@ func (e *Engine) captureLoop(ctx context.Context) {
 			wait = max(blocked.Wait+time.Second, backoff)
 		case errors.Is(err, fritz.ErrAuth):
 			wait = max(authBackoffMin, backoff) // never hammer the login
+		case errors.Is(err, fritz.ErrBusy):
+			wait = min(backoff, busyBackoffMax) // stops were already tried: retry soon
+		case errors.Is(err, fritz.ErrNetChanged):
+			wait, backoff = time.Second, 2*time.Second // new network is usually up already
 		}
 		e.setStatus(StateError, fmt.Sprintf("%v – neuer Versuch in %d s", err, int(wait.Seconds())))
 		backoff = min(backoff*2, maxBackoff)
@@ -513,30 +528,123 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 		}
 		tr.Handle(p)
 	}
-	err = cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, handle)
-	if errors.Is(err, fritz.ErrStreamEnded) {
-		e.lostAt.Store(time.Now().UnixNano())
+	capture := func() error {
+		err := cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, handle)
+		switch {
+		case errors.Is(err, fritz.ErrStreamEnded):
+			// The box closed the stream itself: somebody stopped it on purpose.
+			e.lostAt.Store(time.Now().UnixNano())
+		case errors.Is(err, fritz.ErrBusy), ctx.Err() != nil:
+		default:
+			// Our side lost the stream (network switch, timeout): a capture
+			// that blocks the interface afterwards is our own orphan.
+			e.lostAt.Store(0)
+		}
+		return err
 	}
+	err = capture()
 	if errors.Is(err, fritz.ErrBusy) && time.Since(time.Unix(0, e.lostAt.Load())) < 3*time.Minute {
-		// Our own capture was ended recently, so somebody else (another
+		// The box ended our capture recently, so somebody else (another
 		// FritzFlow, the FRITZ!Box UI) is capturing now: don't fight over it.
 		return fmt.Errorf("auf %s läuft bereits ein anderer Mitschnitt (zweite FritzFlow-Instanz oder FRITZ!Box-Oberfläche?)", cfg.Interface)
 	}
-	if errors.Is(err, fritz.ErrBusy) && ctx.Err() == nil {
-		// A capture left over from an earlier run blocks the interface:
-		// stop it and try once more right away.
-		e.log.Printf("Hängender Mitschnitt auf %s – beende ihn und starte neu", cfg.Interface)
-		sctx, scancel := context.WithTimeout(ctx, 8*time.Second)
-		cl.StopCapture(sctx, sid, cfg.Interface)
-		scancel()
-		if sleep(ctx, time.Second) {
-			err = cl.Capture(ctx, sid, cfg.Interface, cfg.Snaplen, idleTimeout, &e.received, handle)
+	// A capture left over from an earlier run or a vanished network
+	// connection blocks the interface. Stop it and retry; if the box ignores
+	// the per-interface stop (seen with orphaned captures on FRITZ!OS 8.x),
+	// press "Alle stoppen".
+	for step := 0; step < 2 && errors.Is(err, fritz.ErrBusy) && ctx.Err() == nil; step++ {
+		var sctx context.Context
+		var scancel context.CancelFunc
+		if step == 0 {
+			e.log.Printf("Hängender Mitschnitt auf %s – beende ihn und starte neu", cfg.Interface)
+			sctx, scancel = context.WithTimeout(ctx, 8*time.Second)
+			cl.StopCapture(sctx, sid, cfg.Interface)
+		} else {
+			e.log.Printf("Mitschnitt auf %s lässt sich nicht einzeln beenden – stoppe alle Mitschnitte der FRITZ!Box", cfg.Interface)
+			// The box only answers once every capture has ended; don't wait for that.
+			sctx, scancel = context.WithTimeout(ctx, 3*time.Second)
+			cl.StopAllCaptures(sctx, sid)
 		}
+		scancel()
+		if !sleep(ctx, time.Second) {
+			break
+		}
+		err = capture()
 	}
 	if ctx.Err() != nil && parent.Err() == nil {
 		return nil // stopped on purpose (restart / no viewers)
 	}
+	if errors.Is(err, fritz.ErrBusy) && cfg.Interface != fallbackIface {
+		ferr := e.captureFallback(ctx, cl, sid, cfg, handle)
+		switch {
+		case ctx.Err() != nil && parent.Err() == nil:
+			return nil
+		case ferr == nil || !errors.Is(ferr, fritz.ErrBusy):
+			return ferr // back on cfg.Interface, or the fallback stream broke (e.g. another network change)
+		}
+		// The fallback is blocked as well (an earlier fallback stream got
+		// orphaned by a second network change).
+		return fmt.Errorf("%w: auf %s und %s hängen noch alte Mitschnitte (mehrfacher LAN/WLAN-Wechsel?). "+
+			"Die FRITZ!Box gibt sie erst nach bis zu etwa 16 Minuten von selbst frei – FritzFlow verbindet sich dann automatisch",
+			fritz.ErrBusy, cfg.Interface, fallbackIface)
+	}
+	if errors.Is(err, fritz.ErrBusy) {
+		// Typically our own capture whose connection vanished (adapter
+		// switched off): the box keeps sending into the void until its TCP
+		// gives up (about 16 minutes), and no stop request ends it earlier.
+		return fmt.Errorf("%w: auf %s hängt noch ein alter Mitschnitt (z. B. nach LAN/WLAN-Wechsel). "+
+			"Die FRITZ!Box gibt ihn erst nach bis zu etwa 16 Minuten von selbst frei – FritzFlow verbindet sich dann automatisch", fritz.ErrBusy, cfg.Interface)
+	}
 	return err
+}
+
+// captureFallback captures the routing interface while cfg.Interface is
+// blocked by an orphaned capture, and returns nil as soon as cfg.Interface
+// can be captured again. It returns an error if the fallback fails, too.
+func (e *Engine) captureFallback(ctx context.Context, cl *fritz.Client, sid string, cfg config.Config, handle func(pcap.Packet)) error {
+	e.log.Printf("%s ist noch durch einen alten Mitschnitt belegt – eingeschränkte Ansicht über %s, bis %s wieder frei ist",
+		cfg.Interface, fallbackIface, cfg.Interface)
+	e.setFallback(fmt.Sprintf("Eingeschränkte Ansicht: Auf %s hängt noch ein alter Mitschnitt (z. B. nach LAN/WLAN-Wechsel), "+
+		"den die FRITZ!Box erst nach einigen Minuten freigibt. Bis dahin zeigt FritzFlow nur Verkehr über den Router "+
+		"(kein Verkehr zwischen Geräten im Heimnetz) und wechselt danach automatisch zurück.", cfg.Interface))
+	defer e.setFallback("")
+	fctx, fcancel := context.WithCancel(ctx)
+	defer fcancel()
+	var freed atomic.Bool
+	go func() {
+		t := time.NewTicker(fallbackProbe)
+		defer t.Stop()
+		for {
+			select {
+			case <-fctx.Done():
+				return
+			case <-t.C:
+			}
+			if cl.CaptureAvailable(fctx, sid, cfg.Interface) {
+				freed.Store(true)
+				fcancel()
+				return
+			}
+		}
+	}()
+	err := cl.Capture(fctx, sid, fallbackIface, cfg.Snaplen, idleTimeout, &e.received, handle)
+	sctx, scancel := context.WithTimeout(context.Background(), 8*time.Second)
+	cl.StopCapture(sctx, sid, fallbackIface)
+	scancel()
+	if freed.Load() {
+		e.log.Printf("%s ist wieder frei – wechsle zurück", cfg.Interface)
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
+func (e *Engine) setFallback(msg string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.status.Fallback = msg
 }
 
 // learnBoxAddresses resolves the box host name so that traffic to the box's
