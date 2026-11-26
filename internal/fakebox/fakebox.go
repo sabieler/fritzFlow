@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -109,10 +110,15 @@ func Start(user, password string) (*Box, error) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		// plausible 24 h curve (newest first, 6-minute steps): busy evenings,
+		// quiet nights, a little jitter
 		mk := func(base, amp float64) string {
 			v := make([]string, 240)
 			for i := range v {
-				v[i] = strconv.Itoa(int(base + amp*float64((i*7)%11)/10))
+				hoursAgo := float64(i) * 0.1
+				day := 0.5 + 0.5*math.Sin((20-hoursAgo)/24*2*math.Pi-math.Pi/2)
+				jitter := 0.15 * math.Sin(float64(i)*1.7) * math.Sin(float64(i)*0.37)
+				v[i] = strconv.Itoa(int(base + amp*(day+jitter)))
 			}
 			return strings.Join(v, ",")
 		}
