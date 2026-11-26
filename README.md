@@ -92,6 +92,7 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 | `fritzbox` | `http://fritz.box` | Adresse der Box |
 | `username` / `password` | – | FRITZ!Box-Benutzer |
 | `interface` | `1-lan` | Mitschnitt-Schnittstelle (`1-lan` = LAN+WLAN, `2-1` = Internet, `3-0` = Routing-Schnittstelle). Die Kennungen stammen von der FRITZ!Box (Start-Knöpfe unter `https://fritz.box/html/capture.html`) |
+| `capture_guest` | `false` | Gastnetz zusätzlich mitschneiden (`1-guest`). Das Gastnetz ist auf der Box eine eigene Schnittstelle und nicht in `1-lan` enthalten; erst damit zeigt der Netz-Filter „Gast“ Verkehr. Etwas mehr Last auf der Box |
 | `snaplen` | `200` | Bytes pro Paket (64–1600) |
 | `capture_mode` | `on-demand` | oder `always` |
 | `reverse_dns` | `true` | unbekannte IPs per PTR benennen |
@@ -113,8 +114,10 @@ Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <
   aktiv, wartet FritzFlow. Hängende Mitschnitte einer abgestürzten Instanz beendet FritzFlow selbst.
 - **„Auf 1-lan hängt noch ein alter Mitschnitt“ / „Eingeschränkte Ansicht“ nach LAN/WLAN-Wechsel:**
   Wird der Netzwerkadapter abgeschaltet, während FritzFlow mitschneidet, merkt die FRITZ!Box das nicht.
-  Sie sendet den Mitschnitt weiter an die verschwundene Adresse, bis ihr TCP nach **etwa 16 Minuten**
-  aufgibt. So lange bleibt die Schnittstelle belegt – weder „Stopp“ noch „Alle stoppen“ (auch nicht in der
+  Sie sendet den Mitschnitt vermutlich weiter an die verschwundene Adresse, bis ihr TCP aufgibt. In einem
+  Test mit einer FRITZ!Box 7590 (FRITZ!OS 8.54 Beta) dauerte das **etwa 16 Minuten**; das passt zum
+  Linux-Standard (`tcp_retries2` = 15, rund 15½ Minuten), ist aber nicht von AVM dokumentiert und kann
+  länger dauern. So lange bleibt die Schnittstelle belegt – weder „Stopp“ noch „Alle stoppen“ (auch nicht in der
   FRITZ!Box-Oberfläche) noch Abmelden beendet ihn vorher; nur ein Neustart der Box hilft sofort.
   FritzFlow erkennt den Netzwechsel, versucht beide Stopp-Varianten und weicht dann auf die
   Routing-Schnittstelle `3-0` aus: Sie zeigt allen Verkehr über den Router mit lokalen Adressen, aber

@@ -46,6 +46,9 @@ type Config struct {
 	InsecureTLS bool   `json:"insecure_tls"`
 	// BoxStats enables polling CPU/temperature/RAM/energy of the box.
 	BoxStats bool `json:"box_stats"`
+	// CaptureGuest additionally captures the guest network (1-guest), which
+	// is a separate bridge on the box and not part of 1-lan.
+	CaptureGuest bool `json:"capture_guest,omitempty"`
 	// ExitAfterMinutes ends FritzFlow this many minutes after the last
 	// browser tab was closed; 0 keeps it running. nil = DefaultExitAfter.
 	ExitAfterMinutes *int `json:"exit_after_minutes,omitempty"`

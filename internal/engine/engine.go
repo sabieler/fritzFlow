@@ -42,6 +42,10 @@ const (
 	// fallbackIface is the routing interface: it sees all routed traffic
 	// with LAN addresses (before NAT) and is not blocked when 1-lan is.
 	fallbackIface = "3-0"
+	// guestIface is the guest network bridge (separate from 1-lan).
+	guestIface = "1-guest"
+	// guestIdleTimeout is long: a guest network is often silent for a while.
+	guestIdleTimeout = 10 * time.Minute
 )
 
 var (
@@ -49,6 +53,8 @@ var (
 	fallbackProbe = 30 * time.Second
 	// exitCheck is how often exitWhenUnused looks for connected browsers.
 	exitCheck = 5 * time.Second
+	// guestRetry is the pause before restarting a failed guest capture.
+	guestRetry = 30 * time.Second
 )
 
 // Status describes what the engine is doing.
@@ -74,6 +80,7 @@ type Status struct {
 	WAN        *fritz.WANMonitor `json:"wan,omitempty"`
 	LoadInfo   string            `json:"loadInfo,omitempty"`
 	Fallback   string            `json:"fallback,omitempty"` // set while capturing fallbackIface instead
+	GuestInfo  string            `json:"guestInfo,omitempty"` // why the guest network is not captured
 }
 
 type message struct {
@@ -433,6 +440,9 @@ func (e *Engine) tickLoop(ctx context.Context) {
 			if st.Fallback != "" {
 				st.Iface = fallbackIface
 			}
+			if cfg.CaptureGuest && st.GuestInfo == "" && st.State == StateLive {
+				st.Iface += " + " + guestIface
+			}
 			st.Demo, st.ReadOnly, st.Version = e.opt.Demo, e.opt.ReadOnly, e.opt.Version
 			st.Viewers = e.viewers.Load()
 			st.BoxStats = cfg.BoxStats
@@ -555,7 +565,18 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 	e.sid.Store(sid)
 	go e.learnBoxAddresses(ctx, cfg)
 	go e.learnBoxInfo(ctx, cl)
+	tr := e.trk()
+	var guest sync.WaitGroup
+	if cfg.CaptureGuest && cfg.Interface != guestIface {
+		guest.Add(1)
+		go func() {
+			defer guest.Done()
+			e.guestLoop(ctx, cl, sid, cfg, tr.Handle)
+		}()
+	}
 	defer func() {
+		cancel()
+		guest.Wait() // the guest capture stops itself; it needs the session until then
 		e.sid.Store("")
 		c2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel2()
@@ -563,7 +584,6 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 		cl.Logout(c2, sid)
 	}()
 	e.setStatus(StateConnecting, "Starte Mitschnitt auf "+cfg.Interface+" …")
-	tr := e.trk()
 	var live atomic.Bool
 	handle := func(p pcap.Packet) {
 		if !live.Load() {
@@ -630,15 +650,15 @@ func (e *Engine) captureOnce(parent context.Context, cfg config.Config) error {
 		// The fallback is blocked as well (an earlier fallback stream got
 		// orphaned by a second network change).
 		return fmt.Errorf("%w: auf %s und %s hängen noch alte Mitschnitte (mehrfacher LAN/WLAN-Wechsel?). "+
-			"Die FRITZ!Box gibt sie erst nach bis zu etwa 16 Minuten von selbst frei – FritzFlow verbindet sich dann automatisch",
+			"Die FRITZ!Box gibt sie erst nach einiger Zeit (im Test ca. 16 Minuten) von selbst frei – sofort hilft nur ein Neustart der Box – FritzFlow verbindet sich dann automatisch",
 			fritz.ErrBusy, cfg.Interface, fallbackIface)
 	}
 	if errors.Is(err, fritz.ErrBusy) {
 		// Typically our own capture whose connection vanished (adapter
 		// switched off): the box keeps sending into the void until its TCP
-		// gives up (about 16 minutes), and no stop request ends it earlier.
+		// gives up (about 16 minutes in a test with a 7590), and no stop request ends it earlier.
 		return fmt.Errorf("%w: auf %s hängt noch ein alter Mitschnitt (z. B. nach LAN/WLAN-Wechsel). "+
-			"Die FRITZ!Box gibt ihn erst nach bis zu etwa 16 Minuten von selbst frei – FritzFlow verbindet sich dann automatisch", fritz.ErrBusy, cfg.Interface)
+			"Die FRITZ!Box gibt ihn erst nach einiger Zeit (im Test ca. 16 Minuten) von selbst frei – sofort hilft nur ein Neustart der Box – FritzFlow verbindet sich dann automatisch", fritz.ErrBusy, cfg.Interface)
 	}
 	return err
 }
@@ -684,6 +704,52 @@ func (e *Engine) captureFallback(ctx context.Context, cl *fritz.Client, sid stri
 		return ctx.Err()
 	}
 	return err
+}
+
+// guestLoop captures the guest network next to the main interface while ctx
+// lives. Problems are shown as a hint but never stop the main capture.
+func (e *Engine) guestLoop(ctx context.Context, cl *fritz.Client, sid string, cfg config.Config, handle func(pcap.Packet)) {
+	defer e.setGuestInfo("")
+	defer func() {
+		c, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		cl.StopCapture(c, sid, guestIface)
+	}()
+	stopped := false
+	for ctx.Err() == nil {
+		var got atomic.Bool
+		err := cl.Capture(ctx, sid, guestIface, cfg.Snaplen, guestIdleTimeout, &e.received, func(p pcap.Packet) {
+			if !got.Swap(true) {
+				e.setGuestInfo("")
+			}
+			handle(p)
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		if errors.Is(err, fritz.ErrBusy) && !stopped {
+			stopped = true // a leftover guest capture: stop it once and retry at once
+			sctx, scancel := context.WithTimeout(ctx, 8*time.Second)
+			cl.StopCapture(sctx, sid, guestIface)
+			scancel()
+			continue
+		}
+		if !got.Load() && !errors.Is(err, fritz.ErrIdle) { // a quiet guest network is fine
+			e.setGuestInfo("Gastnetz wird nicht mitgeschnitten: " + err.Error())
+		}
+		if !sleep(ctx, guestRetry) {
+			return
+		}
+	}
+}
+
+func (e *Engine) setGuestInfo(msg string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if msg != "" && msg != e.status.GuestInfo {
+		e.log.Print(msg)
+	}
+	e.status.GuestInfo = msg
 }
 
 func (e *Engine) setFallback(msg string) {

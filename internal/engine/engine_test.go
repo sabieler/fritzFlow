@@ -190,6 +190,40 @@ func TestFallbackWhileInterfaceBlocked(t *testing.T) {
 	waitFor("back on 1-lan", func(s Status) bool { return s.State == StateLive && s.Fallback == "" })
 }
 
+// With capture_guest the guest network is captured next to 1-lan and both
+// captures end cleanly when nobody watches any more.
+func TestCapturesGuestNetwork(t *testing.T) {
+	box, err := fakebox.Start("u", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer box.Close()
+	cfg := config.Default()
+	cfg.FritzBox, cfg.TR064URL, cfg.Username, cfg.Password = box.URL, box.URL, "u", "p"
+	cfg.ReverseDNS = false
+	cfg.CaptureGuest = true
+	e := New(cfg, Options{ConfigPath: filepath.Join(t.TempDir(), "c.json"), Logger: log.New(io.Discard, "", 0)})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	leave := e.AddViewer()
+	for i := 0; i < 50 && (e.state() != StateLive || box.Starts("1-guest") == 0); i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if e.state() != StateLive || box.Starts("1-lan") == 0 || box.Starts("1-guest") == 0 {
+		t.Fatalf("expected live with both captures, state %s, starts lan=%d guest=%d",
+			e.state(), box.Starts("1-lan"), box.Starts("1-guest"))
+	}
+	leave()
+	e.lastViewer.Store(time.Now().Add(-time.Hour).UnixNano())
+	for i := 0; i < 50 && e.state() != StateIdle; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if s := e.state(); s != StateIdle {
+		t.Fatalf("expected idle after the viewer left, got %s", s)
+	}
+}
+
 // Run ends by itself once no browser has been connected for ExitAfter.
 func TestExitsWhenBrowserClosed(t *testing.T) {
 	exitCheck = 50 * time.Millisecond

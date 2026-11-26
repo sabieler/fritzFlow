@@ -22,6 +22,9 @@ import (
 
 var errIdle = errors.New("keine Daten von der FRITZ!Box empfangen (Zeitüberschreitung)")
 
+// ErrIdle means the capture stream delivered no data for the idle timeout.
+var ErrIdle = errIdle
+
 // ErrBusy means the box refused to start a capture (usually because another
 // capture on the same interface is still running).
 var ErrBusy = errors.New("FRITZ!Box startet keinen Mitschnitt")

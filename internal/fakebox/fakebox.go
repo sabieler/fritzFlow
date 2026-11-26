@@ -38,6 +38,14 @@ type Box struct {
 	cancel    context.CancelFunc
 	orphans   map[string]bool // interfaces blocked by an orphaned capture → sticky
 	stopAlls  int
+	starts    map[string]int // capture starts per interface
+}
+
+// Starts reports how often a capture on iface was started.
+func (b *Box) Starts(iface string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.starts[iface]
 }
 
 // SimulateOrphanCapture blocks iface (e.g. "1-lan") like a capture whose
@@ -190,6 +198,10 @@ func (b *Box) capture(w http.ResponseWriter, r *http.Request) {
 	}
 	b.mu.Lock()
 	_, orphan := b.orphans[q.Get("ifaceorminor")]
+	if b.starts == nil {
+		b.starts = map[string]int{}
+	}
+	b.starts[q.Get("ifaceorminor")]++
 	b.mu.Unlock()
 	if orphan {
 		// Like FRITZ!OS while another capture runs: 200 with an empty body.

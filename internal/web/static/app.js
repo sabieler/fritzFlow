@@ -713,7 +713,7 @@ $('#flow').addEventListener('click', (ev) => {
   const nd = flowHit(ev.clientX - r.left, ev.clientY - r.top);
   if (!nd || nd.id === 'box' || nd.more) return;
   if (nd.devId) setDevFilter(S.filter.dev === nd.devId ? '' : nd.devId);
-  else if (nd.destKey) { $('#search').value = nd.label; S.filter.q = nd.label.toLowerCase(); render(); }
+  else if (nd.destKey) toggleQuery(nd.label);
 });
 
 /* ---------- filtering ---------- */
@@ -757,8 +757,24 @@ function renderFilterBar(s) {
   $('#failCount').textContent = nf ? ' ' + nf : '';
   if (S.filter.net) parts.push('nur ' + S.filter.net);
   if (S.filter.dev) parts.push('nur ' + devName(S.filter.dev));
-  $('#filterInfo').textContent = parts.length ? 'Gefiltert: ' + parts.join(', ') : '';
+  if (S.filter.q) parts.push(`Suche „${$('#search').value.trim() || S.filter.q}“`);
+  const resettable = S.filter.q || S.filter.dev || S.filter.net;
+  const html = (parts.length ? 'Gefiltert: ' + esc(parts.join(', ')) : '') +
+    (resettable ? ' <button type="button" class="btn link" id="filterReset" title="Suche, Geräte- und Netzfilter aufheben">Filter aufheben</button>' : '');
+  if ($('#filterInfo').dataset.html !== html) { $('#filterInfo').dataset.html = html; $('#filterInfo').innerHTML = html; }
 }
+// Sets the search box (e.g. from a click on a destination or problem); the
+// same value again clears it.
+function toggleQuery(q) {
+  const same = S.filter.q === q.toLowerCase();
+  $('#search').value = same ? '' : q; S.filter.q = same ? '' : q.toLowerCase(); render();
+}
+$('#filterInfo').addEventListener('click', (e) => {
+  if (!e.target.closest('#filterReset')) return;
+  $('#search').value = ''; S.filter.q = '';
+  S.filter.net = ''; store.set('ff-net', '');
+  setDevFilter('');
+});
 $('#kindPills').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   S.filter.kind = b.dataset.v; store.set('ff-kind', b.dataset.v); render();
@@ -840,9 +856,7 @@ function renderTopDest(conns) {
 $('#topDest').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-q]');
   if (!li) return;
-  const q = li.dataset.q;
-  const same = S.filter.q === q.toLowerCase();
-  $('#search').value = same ? '' : q; S.filter.q = same ? '' : q.toLowerCase(); render();
+  toggleQuery(li.dataset.q);
 });
 
 const devEls = new Map();
@@ -918,7 +932,7 @@ function renderProblems(s) {
 for (const id of ['#dnsFails', '#connFails']) {
   $(id).addEventListener('click', (e) => {
     const li = e.target.closest('li[data-q]'); if (!li) return;
-    $('#search').value = li.dataset.q; S.filter.q = li.dataset.q.toLowerCase(); render();
+    toggleQuery(li.dataset.q);
   });
 }
 
@@ -1080,6 +1094,7 @@ function renderStatus(st) {
   if (st.demo) banners.push(['info', 'Demo-Modus: Es werden simulierte Daten angezeigt, keine echte FRITZ!Box.']);
   if (st.state === 'error') banners.push(['err', st.message]);
   if (st.fallback) banners.push(['warn', st.fallback]);
+  if (st.guestInfo) banners.push(['warn', st.guestInfo]);
   if (st.hostsInfo) banners.push(['warn', st.hostsInfo + ' – Geräte werden mit IP-Adresse angezeigt.']);
   const key = JSON.stringify(banners);
   const box = $('#banners');
@@ -1146,10 +1161,19 @@ function onSnapshot(s) {
 /* ---------- data connection ---------- */
 // Primary: Server-Sent Events. Fallback: polling (some ad/tracker blockers
 // or proxies break event streams). If nothing arrives at all, show a hint.
-const conn = { es: null, last: 0, mode: 'sse', pollTimer: null, started: Date.now(), hint: false };
+// reachable: did the last poll get any HTTP answer? (false = FritzFlow is not running)
+const conn = { es: null, last: 0, mode: 'sse', pollTimer: null, started: Date.now(), hint: '', reachable: null };
+const HINTS = {
+  down: 'FritzFlow läuft nicht mehr – z. B. weil es sich nach dem Schließen aller Tabs beendet hat ' +
+    '(Einstellung „FritzFlow beenden nach … Minuten“) oder das Fenster geschlossen wurde. Bitte FritzFlow neu starten; ' +
+    'diese Seite verbindet sich dann von selbst.',
+  blocked: 'FritzFlow läuft, aber hier kommen keine Daten an. Läuft ein Werbe- oder Tracker-Blocker ' +
+    '(z. B. in Vivaldi, Brave, uBlock Origin)? Bitte für localhost deaktivieren und die Seite neu laden.',
+};
 function handleData(text) {
   conn.last = Date.now();
-  if (conn.hint) { conn.hint = false; $('#blockHint').hidden = true; }
+  conn.reachable = true;
+  if (conn.hint) { conn.hint = ''; $('#blockHint').hidden = true; }
   try { onSnapshot(JSON.parse(text)); } catch (e) { console.error(e); }
 }
 function startSSE() {
@@ -1168,8 +1192,9 @@ function startPolling() {
   const tick = async () => {
     try {
       const r = await fetch('state', { cache: 'no-store' });
+      conn.reachable = true;
       if (r.status === 200) handleData(await r.text());
-    } catch { /* app not reachable */ }
+    } catch { conn.reachable = false; /* app not reachable */ }
     conn.pollTimer = setTimeout(tick, 1000);
   };
   tick();
@@ -1178,11 +1203,13 @@ startSSE();
 setInterval(() => {
   const silent = Date.now() - (conn.last || conn.started);
   if (conn.mode === 'sse' && silent > 5000) startPolling();
-  if (silent > 9000 && !conn.hint) {
-    conn.hint = true;
+  const kind = conn.reachable === false ? 'down' : 'blocked';
+  if (silent > 9000 && conn.hint !== kind) {
+    conn.hint = kind;
+    $('#blockHintText').textContent = HINTS[kind];
     $('#blockHint').hidden = false;
     $('#status').dataset.state = 'error';
-    $('#statusText').textContent = 'Keine Daten';
+    $('#statusText').textContent = kind === 'down' ? 'Beendet' : 'Keine Daten';
   }
 }, 1000);
 
@@ -1268,6 +1295,7 @@ async function openSetup() {
   form.openBrowser.checked = c.openBrowser !== false;
   form.boxStats.checked = c.boxStats !== false;
   form.exitAfterMinutes.value = c.exitAfterMinutes ?? 2;
+  form.captureGuest.checked = !!c.captureGuest;
   await fillBrowsers(c.browser || '');
   $('#cfgPath').textContent = c.path ? 'Gespeichert in: ' + c.path + (c.passwordEnv ? ' (Passwort aus FRITZFLOW_PASSWORD)' : '') : '';
   if (!dlg.open) dlg.showModal();
@@ -1316,6 +1344,7 @@ function formData() {
     openBrowser: form.openBrowser.checked,
     boxStats: form.boxStats.checked,
     exitAfterMinutes: Math.max(0, Math.round(+form.exitAfterMinutes.value || 0)),
+    captureGuest: form.captureGuest.checked,
     browser: form.browserSel.value === 'custom' ? form.browserCustom.value.trim() : form.browserSel.value,
   };
 }

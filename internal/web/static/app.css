@@ -158,11 +158,14 @@ button, input, select { font: inherit; color: inherit; }
 .mini-seg button.on { background: var(--card-hover); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
 
 [data-tile] { position: relative; }
+/* The hide button always sits in the tile's top right corner, whatever the
+   header contains; headers keep that corner free. */
 .tile-x {
-  order: 99; margin-left: 6px; width: 22px; height: 22px; border-radius: 6px; border: 0; padding: 0;
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 6px; border: 0; padding: 0;
   background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; opacity: 0; transition: opacity .2s, background .2s;
 }
-.kpi > .tile-x { position: absolute; top: 10px; right: 10px; }
+[data-tile] > .card-head, .toolbar[data-tile] { padding-right: 24px; }
 [data-tile]:hover .tile-x, .tile-x:focus-visible { opacity: 1; }
 .tile-x:hover { background: var(--pill); color: var(--text); }
 @media (hover: none) { .tile-x { opacity: .6; } }
@@ -451,6 +454,7 @@ dialog[open] { animation: pop .25s ease; }
 .msg.err { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
 .msg.busy { background: var(--pill); color: var(--text2); }
 .dlg-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+#filterInfo .btn.link { height: auto; padding: 2px 8px; margin-left: 6px; font-size: 12px; font-weight: 600; border-radius: 8px; }
 .btn { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--pill); cursor: pointer; font-weight: 600; font-size: 13px; transition: transform .1s, filter .2s, background .2s; }
 .btn:hover { background: var(--card-hover); }
 .btn:active { transform: scale(.97); }
