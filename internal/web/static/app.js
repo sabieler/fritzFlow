@@ -1030,6 +1030,8 @@ function renderTable(conns) {
     let tr = rowEls.get(c.id);
     if (!tr) {
       tr = el('tr', firstTable ? '' : 'new');
+      // flash once: moving the row (re-sorting) would otherwise restart the animation forever
+      if (!firstTable) setTimeout(() => tr.classList.remove('new'), 1300);
       tr.innerHTML = '<td><div class="cdev"></div></td><td><div class="cdst"><span class="bdot"></span><div><b></b><small></small></div></div></td><td></td><td class="r"></td><td class="r"></td><td class="r"></td><td class="r"></td>';
       rowEls.set(c.id, tr);
     }

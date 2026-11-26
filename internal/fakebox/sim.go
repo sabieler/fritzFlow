@@ -306,6 +306,31 @@ func (r *run) extras(tick int) {
 		back := pktgen.TCP(9100, 51515, pktgen.ACK, nil)
 		r.emit(pc.mac, r.s.printer.mac, r.s.printer.ip4, pc.ip4, 6, back, 20)
 	}
+	// typical trouble for the "Probleme" tile, every ~17 s
+	switch tick % 700 {
+	case 40: // smart speaker asks for a name that does not exist
+		r.dnsFail(r.s.devs[4], "metrics.smarthome-cloud.example", 3)
+	case 260: // smart plug: cloud server never answers
+		d := r.s.devs[8]
+		r.emit(r.s.router, d.mac, d.ip4, netip.MustParseAddr("192.0.2.99"), 6, pktgen.TCP(41883, 8883, pktgen.SYN, nil), 40)
+	case 480: // laptop: SSH refused by the remote host
+		d, dst := r.s.devs[2], netip.MustParseAddr("198.51.100.22")
+		r.emit(r.s.router, d.mac, d.ip4, dst, 6, pktgen.TCP(52022, 22, pktgen.SYN, nil), 40)
+		r.emit(d.mac, r.s.router, dst, d.ip4, 6, pktgen.TCP(22, 52022, pktgen.RST|pktgen.ACK, nil), 20)
+	case 600: // phone: DNS server failure for an app backend
+		r.dnsFail(r.s.devs[1], "push.example-app.example", 2)
+	}
+}
+
+// dnsFail emits a DNS query and an error response (rcode 2 = SERVFAIL, 3 = NXDOMAIN).
+func (r *run) dnsFail(d *simDev, name string, rcode byte) {
+	sport, id := uint16(30000+r.rnd.Intn(30000)), uint16(r.rnd.Intn(65535))
+	q := pktgen.DNSResponse(id, name, "", r.s.routerV4)
+	q[2], q[3], q[6], q[7] = 0x01, 0x00, 0, 0 // turn into a query without answers
+	r.emit(r.s.router, d.mac, d.ip4, r.s.routerV4, 17, pktgen.UDP(sport, 53, q), 0)
+	resp := pktgen.DNSResponse(id, name, "", r.s.routerV4)
+	resp[3], resp[6], resp[7] = 0x80|rcode, 0, 0
+	r.emit(d.mac, r.s.router, r.s.routerV4, d.ip4, 17, pktgen.UDP(53, sport, resp), 0)
 }
 
 // run streams simulated traffic until ctx is done or writing fails.

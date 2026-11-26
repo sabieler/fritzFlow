@@ -9,7 +9,14 @@ Abhängigkeiten, ohne Cloud.
 
 ![FritzFlow im Demo-Modus (simulierte Daten)](docs/screenshot.jpg)
 
-*Screenshot im Demo-Modus – alle Geräte, Ziele und Werte sind simuliert.*
+<details>
+<summary><b>Weitere Ansicht:</b> Durchsatz, Geräte, Probleme und Verbindungstabelle</summary>
+
+![Durchsatz, Geräte, Probleme und Verbindungen im Demo-Modus](docs/screenshot-details.jpg)
+
+</details>
+
+*Screenshots im Demo-Modus – alle Geräte, Ziele, Störungen und Werte sind simuliert.*
 
 > **English:** FritzFlow turns the built-in packet capture of an AVM FRITZ!Box router into a live
 > dashboard showing which device talks to which service. Single binary for Windows, macOS and Linux,
@@ -50,14 +57,19 @@ solange sie den Paketmitschnitt anbieten – Rückmeldungen sind willkommen.
 
 1. Unter **[Releases](https://github.com/sabieler/fritzFlow/releases/latest)** die passende Datei herunterladen:
 
-   | System | Datei |
+   Der Dateiname enthält vorne die Version, **entscheidend ist das Ende**:
+
+   | Dein System | Datei endet auf |
    |---|---|
-   | Windows (Intel/AMD) | `fritzflow-…-windows-amd64.exe` |
-   | Windows (ARM) | `fritzflow-…-windows-arm64.exe` |
-   | macOS (Apple Silicon M1–M4) | `fritzflow-…-darwin-arm64` |
-   | macOS (Intel) | `fritzflow-…-darwin-amd64` |
-   | Linux (PC) | `fritzflow-…-linux-amd64` |
-   | Raspberry Pi 4/5 (64 Bit) | `fritzflow-…-linux-arm64` |
+   | **Windows** – fast alle PCs und Laptops (Intel/AMD) | **`windows-amd64.exe`** |
+   | Windows auf ARM (z. B. Snapdragon, Surface Pro X) | `windows-arm64.exe` |
+   | **macOS** mit Apple-Chip (M1, M2, M3, M4 …) | **`darwin-arm64`** |
+   | macOS mit Intel-Prozessor (ältere Macs) | `darwin-amd64` |
+   | **Linux** – normaler PC | **`linux-amd64`** |
+   | Raspberry Pi 3/4/5 mit 64-Bit-System | `linux-arm64` |
+   | Raspberry Pi mit 32-Bit-System | `linux-arm` |
+
+   Welcher Mac? Apple-Menü → *Über diesen Mac* → steht dort „Chip: Apple M…“, ist es `darwin-arm64`.
 
    Starten:
    - **Windows:** Datei doppelklicken. Bei „Der Computer wurde durch Windows geschützt“
@@ -222,8 +234,12 @@ Keine externen Go-Module, keine CDN-Abhängigkeiten.
 
 ## Danksagung
 
-Die Idee, den FRITZ!Box-Mitschnitt live abzugreifen, stammt von Skripten wie `fritzdump` aus dem
-[ntopng](https://github.com/ntop/ntopng)-Umfeld. FritzFlow ist eine eigenständige Neuentwicklung.
+Die Idee, den versteckten Live-Mitschnitt der FRITZ!Box per Programm abzugreifen, stammt aus
+bestehenden Werkzeugen, allen voran **[fritzdump](https://github.com/arn-c0de/fritzdump)** von
+arn-c0de (leitet den Mitschnitt an Wireshark, ntopng oder eine Datei weiter) und dem älteren
+`fritzdump.sh` aus dem [ntopng](https://github.com/ntop/ntopng)-Projekt. FritzFlow ist eine
+eigenständige Neuentwicklung in Go und enthält keinen Code dieser Projekte – vielen Dank für die
+Vorarbeit!
 
 ## Marken
 
