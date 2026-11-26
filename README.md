@@ -118,10 +118,32 @@ So bleibt dein Admin-Zugang unberührt, und der Zugang lässt sich jederzeit spe
 ## Geschwindigkeit und Last der FRITZ!Box
 
 **Wichtig:** Solange irgendein Paketmitschnitt läuft – egal ob über FritzFlow, ein anderes Werkzeug
-oder die Box-Oberfläche –, leitet die FRITZ!Box Daten deutlich langsamer weiter. In einem Test mit
-einer FRITZ!Box 7590 an einer 250-Mbit/s-Leitung sank der Download von 262 auf etwa 55 Mbit/s,
-unabhängig von Schnittstelle und Detailgrad. Nach dem Ende des Mitschnitts ist sofort wieder die
-volle Geschwindigkeit da. Wie stark der Effekt bei anderen Modellen ist, ist nicht getestet.
+oder die Box-Oberfläche –, leitet die FRITZ!Box Daten deutlich langsamer weiter. Das ist **kein Fehler
+in FritzFlow**, sondern eine Eigenschaft der FRITZ!Box. Gemessen mit einer FRITZ!Box 7590
+(FRITZ!OS 8.54 Beta) an einer 250-Mbit/s-Leitung, Download von einem Testserver:
+
+| Zustand der FRITZ!Box | Download |
+|---|---|
+| normal (Paketbeschleunigung aktiv) | 262 Mbit/s |
+| Paketbeschleunigung aktiv, aber ohne Hardware-Beschleunigung | 262 Mbit/s |
+| Paketbeschleunigung **inaktiv** (alles über den Hauptprozessor) | 141 Mbit/s |
+| **Paketmitschnitt läuft** (normale Einstellungen) | **55 Mbit/s** |
+
+Die Einstellungen stammen von der Support-Seite der Box (`fritz.box/support.lua`, Abschnitt
+„Paketbeschleunigung“). Was das bedeutet:
+
+- Normalerweise leiten spezialisierte Beschleuniger die Pakete weiter, am Hauptprozessor vorbei.
+  Für einen Mitschnitt muss die Box aber **jedes Paket** sehen, kopieren, mit Zeitstempel versehen
+  und an das mitschneidende Programm senden – auf demselben Prozessor, der dann auch routen muss.
+  Deshalb ist es sogar langsamer als nur ohne Beschleunigung.
+- Der Mitschnitt-Datenstrom selbst ist klein (bei 55 Mbit/s nur einige hundert KB/s), und weder die
+  Schnittstelle (`1-lan`, `2-1`, `3-0`, `3-17` im Test praktisch gleich) noch der Detailgrad
+  (64 oder 200 Bytes) ändern etwas. Auch die Abfragen von Online-Monitor, CPU und Energie kosten
+  nichts Messbares (ohne Mitschnitt 262 Mbit/s bei Abfragen jede Sekunde).
+- Nach dem Ende des Mitschnitts ist sofort wieder die volle Geschwindigkeit da.
+- Ein Hinweis auf eine absichtliche Drossel durch AVM hat sich nicht gefunden; offiziell
+  dokumentiert ist das Verhalten aber auch nicht. Wie stark der Effekt bei anderen Modellen ist,
+  ist nicht getestet – schnellere Boxen dürften mehr schaffen.
 
 Darum gibt es die **Auto-Pause** (Standard, FRITZ!OS 8): FritzFlow liest den Durchsatz am
 Anschluss über den Online-Monitor der Box, der dafür keinen Mitschnitt braucht. Liegt er 10 s lang
@@ -203,6 +225,12 @@ Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <
 - **FritzFlow läuft nach dem Schließen des Browsers nicht mehr:** Gewollt – es beendet sich nach
   `exit_after_minutes` (Standard 2) ohne geöffnete Ansicht. `0` im Einstellungsdialog oder
   `-exit-after 0` hält es am Laufen.
+- **Internet langsamer, solange FritzFlow läuft:** Das liegt am Paketmitschnitt der FRITZ!Box, nicht
+  an FritzFlow (siehe [Geschwindigkeit und Last](#geschwindigkeit-und-last-der-fritzbox)). Die
+  Auto-Pause gibt die Leitung bei Last nach 10–20 s frei; sie braucht FRITZ!OS 8 und muss in den
+  Einstellungen eingeschaltet sein. Sofort hilft der Pause-Knopf oben neben dem Status oder das
+  Schließen der Ansicht (Standard „Mitschnitt nur bei geöffneter Ansicht“). Für Speedtests
+  FritzFlow pausieren – sonst misst man die Box im Mitschnitt-Betrieb.
 - **Gerätenamen fehlen:** FritzFlow liest sie aus der Heimnetz-Übersicht bzw. per TR-064
   (*Heimnetz → Netzwerk → Netzwerkeinstellungen → Zugriff für Anwendungen zulassen*).
 
