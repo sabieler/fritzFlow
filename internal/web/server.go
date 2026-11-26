@@ -104,21 +104,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 type configView struct {
-	FritzBox    string `json:"fritzbox"`
-	Username    string `json:"username"`
-	Password    string `json:"password,omitempty"`
-	PasswordSet bool   `json:"passwordSet"`
-	Interface   string `json:"interface"`
-	Snaplen     int    `json:"snaplen"`
-	CaptureMode string `json:"captureMode"`
-	ReverseDNS  bool   `json:"reverseDns"`
-	ReadOnly    bool   `json:"readOnly"`
-	Path        string `json:"path"`
-	PasswordEnv bool   `json:"passwordEnv"`
-	Browser     string `json:"browser"`
-	OpenBrowser bool   `json:"openBrowser"`
-	BoxStats    bool   `json:"boxStats"`
-	CaptureGuest bool `json:"captureGuest"`
+	FritzBox     string `json:"fritzbox"`
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`
+	PasswordSet  bool   `json:"passwordSet"`
+	Interface    string `json:"interface"`
+	Snaplen      int    `json:"snaplen"`
+	CaptureMode  string `json:"captureMode"`
+	ReverseDNS   bool   `json:"reverseDns"`
+	ReadOnly     bool   `json:"readOnly"`
+	Path         string `json:"path"`
+	PasswordEnv  bool   `json:"passwordEnv"`
+	Browser      string `json:"browser"`
+	OpenBrowser  bool   `json:"openBrowser"`
+	BoxStats     bool   `json:"boxStats"`
+	CaptureGuest bool   `json:"captureGuest"`
 	// ExitAfterMinutes: 0 = keep running after the last tab was closed.
 	ExitAfterMinutes int `json:"exitAfterMinutes"`
 }

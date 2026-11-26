@@ -79,7 +79,7 @@ type Status struct {
 	Load       *fritz.BoxLoad    `json:"load,omitempty"`
 	WAN        *fritz.WANMonitor `json:"wan,omitempty"`
 	LoadInfo   string            `json:"loadInfo,omitempty"`
-	Fallback   string            `json:"fallback,omitempty"` // set while capturing fallbackIface instead
+	Fallback   string            `json:"fallback,omitempty"`  // set while capturing fallbackIface instead
 	GuestInfo  string            `json:"guestInfo,omitempty"` // why the guest network is not captured
 }
 
