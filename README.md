@@ -91,7 +91,7 @@ Die Datei ist nur für den eigenen Benutzer lesbar (0600). Alternativ per Umgebu
 |---|---|---|
 | `fritzbox` | `http://fritz.box` | Adresse der Box |
 | `username` / `password` | – | FRITZ!Box-Benutzer |
-| `interface` | `1-lan` | Mitschnitt-Schnittstelle (`1-lan` = LAN+WLAN, `2-1` = Internet) |
+| `interface` | `1-lan` | Mitschnitt-Schnittstelle (`1-lan` = LAN+WLAN, `2-1` = Internet, `3-0` = Routing-Schnittstelle). Die Kennungen stammen von der FRITZ!Box (Start-Knöpfe unter `https://fritz.box/html/capture.html`) |
 | `snaplen` | `200` | Bytes pro Paket (64–1600) |
 | `capture_mode` | `on-demand` | oder `always` |
 | `reverse_dns` | `true` | unbekannte IPs per PTR benennen |
@@ -111,6 +111,22 @@ Kommandozeile: `-config <pfad>`, `-listen <addr>`, `-no-browser`, `-exit-after <
 - **„Auf 1-lan läuft bereits ein anderer Mitschnitt“:** Die FRITZ!Box erlaubt pro Schnittstelle nur
   einen Mitschnitt. Läuft FritzFlow auf zwei Rechnern oder ist der Mitschnitt in der FRITZ!Box-Oberfläche
   aktiv, wartet FritzFlow. Hängende Mitschnitte einer abgestürzten Instanz beendet FritzFlow selbst.
+- **„Auf 1-lan hängt noch ein alter Mitschnitt“ / „Eingeschränkte Ansicht“ nach LAN/WLAN-Wechsel:**
+  Wird der Netzwerkadapter abgeschaltet, während FritzFlow mitschneidet, merkt die FRITZ!Box das nicht.
+  Sie sendet den Mitschnitt weiter an die verschwundene Adresse, bis ihr TCP nach **etwa 16 Minuten**
+  aufgibt. So lange bleibt die Schnittstelle belegt – weder „Stopp“ noch „Alle stoppen“ (auch nicht in der
+  FRITZ!Box-Oberfläche) noch Abmelden beendet ihn vorher; nur ein Neustart der Box hilft sofort.
+  FritzFlow erkennt den Netzwechsel, versucht beide Stopp-Varianten und weicht dann auf die
+  Routing-Schnittstelle `3-0` aus: Sie zeigt allen Verkehr über den Router mit lokalen Adressen, aber
+  keinen Verkehr zwischen Geräten im Heimnetz und keine MAC-Adressen. Alle 30 s prüft FritzFlow, ob
+  `1-lan` wieder frei ist, und wechselt dann automatisch zurück. Wer innerhalb dieser Zeit mehrfach
+  wechselt, kann auch `3-0` blockieren – dann hilft nur Warten (oder ein Box-Neustart).
+  Unter Windows verwirft die Firewall die Pakete der Box an die alte Adresse stillschweigend; unter
+  Linux/macOS beendet ein Reset des Rechners den alten Mitschnitt evtl. früher, sobald die alte Adresse
+  wieder da ist (nicht getestet).
+- **FritzFlow läuft nach dem Schließen des Browsers nicht mehr:** Gewollt – es beendet sich nach
+  `exit_after_minutes` (Standard 2) ohne geöffnete Ansicht. `0` im Einstellungsdialog oder
+  `-exit-after 0` hält es am Laufen.
 - **Gerätenamen fehlen:** FritzFlow liest sie aus der Heimnetz-Übersicht bzw. per TR-064
   (*Heimnetz → Netzwerk → Netzwerkeinstellungen → Zugriff für Anwendungen zulassen*).
 
